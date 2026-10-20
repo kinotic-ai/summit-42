@@ -5,6 +5,7 @@ import org.kinotic.core.api.annotations.Proxy;
 import org.kinotic.core.api.annotations.Version;
 import org.kinotic.core.api.annotations.Zone;
 import org.kinotic.domain.api.model.Application;
+import org.kinotic.domain.api.model.TenantManagement;
 import org.kinotic.domain.api.utils.DomainUtil;
 
 /**
@@ -17,12 +18,10 @@ import org.kinotic.domain.api.utils.DomainUtil;
 public interface ApplicationServiceProxy {
 
     /**
-     * @return the application with the id, or null when the organization has none
+     * Creates the application whose id the name slugifies to, unless the organization already has it.
+     *
+     * @param tenantManagement who administers the application's tenants, or null for tenant administrators
+     * @return the created application, or the existing one with that id
      */
-    Future<Application> findById(String id);
-
-    /**
-     * Creates the application under the id it carries; fails when the organization already has one with that id.
-     */
-    Future<Application> createSync(Application application);
+    Future<Application> createApplicationIfNotExist(String name, String description, TenantManagement tenantManagement);
 }

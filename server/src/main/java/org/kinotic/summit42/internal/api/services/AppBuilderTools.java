@@ -35,8 +35,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -54,8 +57,9 @@ public class AppBuilderTools {
      */
     public static final String TURN = "turn";
 
-    // the id of the application every organization's app is built in, so the app is found again after a restart
-    private static final String APPLICATION_ID = "summit-42";
+    // every organization's app is a project of the application this name slugifies to, so it is found again after a restart
+    private static final String APPLICATION_NAME = "Summit 42";
+    private static final String APPLICATION_DESCRIPTION = "The apps Summit 42 builds";
     private static final Duration CALL_TIMEOUT = Duration.ofMinutes(2);
     private static final Duration DEPLOYMENT_TIMEOUT = Duration.ofMinutes(15);
     private static final Duration DEPLOYMENT_POLL_INTERVAL = Duration.ofSeconds(5);
@@ -111,7 +115,9 @@ public class AppBuilderTools {
             } else {
                 Validate.notBlank(name, "name is required");
                 turn.getEvents().accept(BuildEvent.progress("Creating the app"));
-                Application application = findOrCreateApplication(turn, name, description);
+                Application application = callAs(turn, () -> applicationService
+                        .createApplicationIfNotExist(APPLICATION_NAME, APPLICATION_DESCRIPTION, null)
+                        .toCompletionStage());
                 Project project = initialized(turn, findOrCreateProject(turn, application, name, description));
                 if (project.getRepoConnectionStatus() != RepositoryConnectionStatus.CONNECTED) {
                     ret = "The app's GitHub repository cannot be used: Kinotic reports it "
@@ -120,7 +126,7 @@ public class AppBuilderTools {
                 } else {
                     session.setProjectId(project.getId());
                     log.info("Organization {} builds in project {}", session.getOrganizationId(), project.getId());
-                    ret = "The app is '" + application.getName() + "'.\n" + describeFiles(turn);
+                    ret = "The app is '" + project.getName() + "'.\n" + describeFiles(turn);
                 }
             }
             return ret;
@@ -218,20 +224,6 @@ public class AppBuilderTools {
         return ret;
     }
 
-    private Application findOrCreateApplication(BuilderTurn turn, String name, String description) {
-        Application found = callAs(turn, () -> applicationService.findById(APPLICATION_ID).toCompletionStage());
-        Application ret;
-        if (found != null) {
-            ret = found;
-        } else {
-            Application application = new Application(name, description)
-                    .setId(APPLICATION_ID)
-                    .setOrganizationId(turn.getParticipant().getOrganizationId());
-            ret = callAs(turn, () -> applicationService.createSync(application).toCompletionStage());
-        }
-        return ret;
-    }
-
     private Project findOrCreateProject(BuilderTurn turn, Application application, String name, String description) {
         Page<Project> page = callAs(turn, () -> projectService.findAllForApplication(application.getId(), Pageable.ofSize(1))
                                                               .toCompletionStage());
@@ -268,7 +260,7 @@ public class AppBuilderTools {
         String projectId = turn.getSession().getProjectId();
         DeploymentStatusType reported = null;
         ProjectDeployment ret = null;
-        while (ret == null && System.nanoTime() < deadline) {
+        while (ret == null && System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
             ProjectDeployment deployment = callAs(turn, () -> projectService.findDeployment(projectId).toCompletionStage());
             ReconcileState<DeploymentState> state = deployment != null ? deployment.getState() : null;
             boolean intended = state != null && state.getDesired() != null && commitSha.equals(state.getDesired().commitSha());
@@ -294,7 +286,7 @@ public class AppBuilderTools {
         if (!allServe(uis, commitSha)) {
             turn.getEvents().accept(BuildEvent.progress("Publishing the app's pages"));
         }
-        while (!allServe(uis, commitSha) && System.nanoTime() < deadline) {
+        while (!allServe(uis, commitSha) && System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
             await(vertx.timer(DEPLOYMENT_POLL_INTERVAL.toMillis(), TimeUnit.MILLISECONDS));
             uis = commitUis(turn, commitSha);
         }
@@ -311,7 +303,9 @@ public class AppBuilderTools {
             }
         }
         if (appUrl != null) {
-            turn.getSession().getConversation().setAppUrl(appUrl);
+            synchronized (turn.getSession()) {
+                turn.getSession().getConversation().setAppUrl(appUrl);
+            }
             turn.getEvents().accept(BuildEvent.appReady(appUrl));
         }
         return "The deployment is running commit " + commitSha + ".\n"
@@ -366,20 +360,38 @@ public class AppBuilderTools {
     }
 
     private <T> T callAs(BuilderTurn turn, Supplier<? extends CompletionStage<T>> call) {
-        try {
-            return securityContext.callAs(turn.getParticipant(), call).get(CALL_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (Exception e) {
-            throw new IllegalStateException(rootMessage(e), e);
-        }
+        return get(securityContext.callAs(turn.getParticipant(), call));
     }
 
-    // tools run on Spring AI's boundedElastic workers, so blocking on a future is allowed here
     private static <T> T await(Future<T> future) {
+        return get(future.toCompletionStage().toCompletableFuture());
+    }
+
+    // tools run on Spring AI's boundedElastic workers, so blocking on a future is allowed here. A cancelled turn
+    // interrupts its tool's thread, but a call already started, such as a commit, still completes; the tool waits for
+    // it, so the turn stays held until the call's effect is recorded, then restores the interrupt
+    private static <T> T get(CompletableFuture<T> future) {
+        long deadline = System.nanoTime() + CALL_TIMEOUT.toNanos();
+        boolean interrupted = false;
+        boolean done = false;
+        T ret = null;
         try {
-            return future.toCompletionStage().toCompletableFuture().get(CALL_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (Exception e) {
+            while (!done) {
+                try {
+                    ret = future.get(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+                    done = true;
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        } catch (ExecutionException | TimeoutException e) {
             throw new IllegalStateException(rootMessage(e), e);
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
+        return ret;
     }
 
     private static String rootMessage(Throwable t) {

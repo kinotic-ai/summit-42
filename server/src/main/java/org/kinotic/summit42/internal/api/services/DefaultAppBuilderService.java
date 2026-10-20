@@ -29,6 +29,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Component
@@ -40,7 +41,8 @@ public class DefaultAppBuilderService implements AppBuilderService {
     private static final String TURN_FAILED = "Something went wrong. Please try again.";
     // the most recent messages of the conversation a turn sends Claude
     private static final int MAX_HISTORY_MESSAGES = 40;
-    // a tool and the model's stream can emit at the same moment; the sink serializes them by retrying briefly
+    // a tool's progress event and the answer's completion can be emitted at the same moment; the sink serializes them
+    // by retrying briefly
     private static final Sinks.EmitFailureHandler RETRY_CONCURRENT_EMIT = Sinks.EmitFailureHandler.busyLooping(Duration.ofSeconds(1));
 
     private final SecurityContext securityContext;
@@ -110,7 +112,9 @@ public class DefaultAppBuilderService implements AppBuilderService {
     private Flux<BuildEvent> runTurn(OrganizationParticipant participant, BuilderSession session, List<Message> prompt) {
         Sinks.Many<BuildEvent> progress = Sinks.many().unicast().onBackpressureBuffer();
         BuilderTurn turn = new BuilderTurn(participant, session, event -> progress.emitNext(event, RETRY_CONCURRENT_EMIT));
-        StringBuilder reply = new StringBuilder();
+        // appended on the model's stream and read by a cancel on another thread
+        StringBuffer reply = new StringBuffer();
+        AtomicBoolean ended = new AtomicBoolean();
 
         Flux<BuildEvent> answer =
                 Mono.fromCompletionStage(() -> chatClientFactory.chatClient(participant))
@@ -132,16 +136,22 @@ public class DefaultAppBuilderService implements AppBuilderService {
                     // the progress stream ends with the answer, so the merged turn completes with it
                     .doFinally(signal -> progress.emitComplete(RETRY_CONCURRENT_EMIT));
 
+        // runs before the stream's completion reaches the client, so a client that reads the conversation or sends its
+        // next message on completion finds the reply recorded and the turn over
+        Runnable endTurn = () -> {
+            if (ended.compareAndSet(false, true)) {
+                synchronized (session) {
+                    if (!reply.isEmpty()) {
+                        session.getConversation().getMessages().add(new ChatMessage(ChatRole.ASSISTANT, reply.toString()));
+                    }
+                }
+                // a cancelled stream leaves the tool call it started running; the turn ends when that returns
+                turn.release();
+            }
+        };
         return Flux.merge(answer, progress.asFlux())
-                   .doFinally(signal -> {
-                       synchronized (session) {
-                           if (!reply.isEmpty()) {
-                               session.getConversation().getMessages().add(new ChatMessage(ChatRole.ASSISTANT, reply.toString()));
-                           }
-                       }
-                       // a cancelled stream leaves the tool call it started running; the turn ends when that returns
-                       turn.release();
-                   });
+                   .doOnTerminate(endTurn)
+                   .doOnCancel(endTurn);
     }
 
     private BuilderSession currentSession() {
