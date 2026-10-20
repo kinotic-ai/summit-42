@@ -368,8 +368,9 @@ public class AppBuilderTools {
     }
 
     // tools run on Spring AI's boundedElastic workers, so blocking on a future is allowed here. A cancelled turn
-    // interrupts its tool's thread, but a call already started, such as a commit, still completes; the tool waits for
-    // it, so the turn stays held until the call's effect is recorded, then restores the interrupt
+    // interrupts its tool's thread, yet the tool runs to its end, each call waited for up to CALL_TIMEOUT, so a
+    // commit or create it started is recorded before the turn is released; the restored interrupt stops the
+    // deployment polling
     private static <T> T get(CompletableFuture<T> future) {
         long deadline = System.nanoTime() + CALL_TIMEOUT.toNanos();
         boolean interrupted = false;
