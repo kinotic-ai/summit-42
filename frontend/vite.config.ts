@@ -11,7 +11,7 @@ export default defineConfig({
         },
     },
     server: {
-        // the management server's development CORS pattern admits this origin, http://localhost:5175
+        // the management server's CORS pattern must admit this origin, http://localhost:5175 (see the root README)
         port: 5175,
         strictPort: true,
     },

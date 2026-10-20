@@ -24,6 +24,15 @@
           <button type="button" class="link-button" @click="load">Try again</button>
         </div>
 
+        <section v-else-if="!githubLinked" class="welcome">
+          <h1>Connect GitHub</h1>
+          <p class="muted">Summit 42 keeps your app's code in a GitHub repository of your own. Install the Kinotic app on your GitHub account, sign in to Kinotic once to finish, and you'll come straight back here.</p>
+          <button type="button" class="btn" :disabled="connecting" @click="connectGitHub">
+            <span v-if="connecting" class="spinner" />
+            Continue to GitHub
+          </button>
+        </section>
+
         <section v-else-if="turns.length === 0" class="welcome">
           <h1>What do you want to build?</h1>
           <p class="muted">Describe your app in plain words. Summit 42 builds it, deploys it, and keeps changing it as you chat.</p>
@@ -64,7 +73,7 @@
                     rows="1"
                     class="composer__input"
                     :placeholder="turns.length === 0 ? 'Describe the app you want…' : 'Ask for a change…'"
-                    :disabled="loading || loadError !== null"
+                    :disabled="loading || loadError !== null || !githubLinked"
                     aria-label="Message"
                     @keydown="onKeydown"
                     @input="autosize" />
@@ -85,6 +94,7 @@ import { useRouter } from 'vue-router'
 import type { Subscription } from 'rxjs'
 import BrandMark from '@/components/BrandMark.vue'
 import { APP_BUILDER, type BuildEvent, type ChatRole, type Conversation } from '@/api/appBuilder'
+import { GITHUB } from '@/api/github'
 import { SESSION, signOut } from '@/api/session'
 
 /** One message as the page shows it: an assistant turn also carries what failed and the app it made live. */
@@ -112,13 +122,16 @@ const notice = ref<string | null>(null)
 const streaming = ref(false)
 const progress = ref<string | null>(null)
 const resetting = ref(false)
+const githubLinked = ref(false)
+const connecting = ref(false)
 
 const scroller = ref<HTMLElement | null>(null)
 const input = ref<HTMLTextAreaElement | null>(null)
 
 let subscription: Subscription | null = null
 
-const canSend = computed(() => !streaming.value && !loading.value && loadError.value === null && draft.value.trim().length > 0)
+const canSend = computed(() => !streaming.value && !loading.value && loadError.value === null && githubLinked.value
+                               && draft.value.trim().length > 0)
 
 onMounted(load)
 
@@ -137,7 +150,9 @@ async function load() {
   loading.value = true
   loadError.value = null
   try {
-    show(await APP_BUILDER.findConversation())
+    const [linked, conversation] = await Promise.all([GITHUB.isLinked(), APP_BUILDER.findConversation()])
+    githubLinked.value = linked
+    show(conversation)
   } catch (err) {
     loadError.value = errorText(err, 'Could not load your conversation.')
   } finally {
@@ -145,6 +160,17 @@ async function load() {
   }
   await scrollToBottom(true)
   input.value?.focus()
+}
+
+async function connectGitHub() {
+  connecting.value = true
+  notice.value = null
+  try {
+    window.location.assign(await GITHUB.startInstall(window.location.origin + '/'))
+  } catch (err) {
+    notice.value = errorText(err, 'Could not start connecting GitHub.')
+    connecting.value = false
+  }
 }
 
 function send() {

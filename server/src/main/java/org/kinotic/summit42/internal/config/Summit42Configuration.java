@@ -2,6 +2,7 @@ package org.kinotic.summit42.internal.config;
 
 import org.kinotic.core.api.event.ZonePartitioningService;
 import org.kinotic.domain.api.utils.DomainUtil;
+import org.kinotic.summit42.api.services.AppBuilderService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -20,8 +21,8 @@ public class Summit42Configuration {
     @Bean
     public ZonePartitioningService zonePartitioningService() {
         return ZonePartitioningService.of("summit-42",
-                                          Set.of(DomainUtil.SUMMIT_42_ZONE),
-                                          Set.of(DomainUtil.SUMMIT_42_ZONE,
+                                          Set.of(AppBuilderService.ZONE),
+                                          Set.of(AppBuilderService.ZONE,
                                                  DomainUtil.MANAGEMENT_API_ZONE,
                                                  DomainUtil.SYSTEM_API_ZONE));
     }

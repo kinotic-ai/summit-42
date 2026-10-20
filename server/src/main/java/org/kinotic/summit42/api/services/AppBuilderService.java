@@ -14,6 +14,13 @@ import reactor.core.publisher.Flux;
 public interface AppBuilderService {
 
     /**
+     * The zone Summit 42's services are published in, which the Kinotic servers list in
+     * {@code kinotic.apiGateway.organizationServiceZones} so organizations' users reach them through the
+     * management server.
+     */
+    String ZONE = "summit-42";
+
+    /**
      * Sends the user's message and streams Claude's turn: its reply as {@link org.kinotic.summit42.api.model.BuildEventType#TEXT}
      * chunks, interleaved with what it is doing to the app. The stream completes when the turn is over, and ends
      * with an {@link org.kinotic.summit42.api.model.BuildEventType#ERROR} event when the turn fails.

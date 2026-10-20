@@ -13,8 +13,9 @@ bun install
 bun run dev          # http://localhost:5175
 ```
 
-Port 5175 is the origin the management server's `development` profile admits in its CORS pattern; with the email
-service disabled locally, the sign-up verification link is printed in the management server's log.
+The management server must admit `http://localhost:5175` in its CORS pattern and list the `summit-42` zone, as the
+root [README](../README.md#kinotic-configuration) shows. With the email service disabled locally, the sign-up
+verification link is printed in the management server's log.
 
 ## Configuration
 

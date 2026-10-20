@@ -21,12 +21,21 @@ becomes a Kinotic organization.
   - read Kinotic's developer documentation.
 - **Acting as the user.** Each tool calls Kinotic's services through `@Proxy` interfaces. It wraps those calls in `SecurityContext.callAs` with the participant of the chat call, so Kinotic authorizes them against the user's organization.
 - **The model.** It comes from the platform's LLM configuration named by `summit42.llmConfigurationName` (default `summit-42`). Add that configuration on the system console's **Platform → LLM configurations** page.
-- **Repositories.** They are written with a short-lived token from Kinotic's `ProjectRepoCredentialService`. Organizations that never link GitHub get their repositories in the platform's installation, which `kinotic.managementApi.github.platformInstallationId` names on the Kinotic servers.
+- **Repositories.** Each app's repository lives in the user's own GitHub account, through the Kinotic GitHub App. The workspace asks the user to connect GitHub before the first chat: it starts Kinotic's install with the workspace as the return URL, GitHub returns to the Kinotic portal's install callback, where the user signs in to the portal once, and the portal finishes the link and sends the browser back. Claude writes the repository with a short-lived token from Kinotic's `ProjectRepoCredentialService`.
 - **Conversations.** They are held in the server's memory, so a restart starts them over. The apps themselves live in Kinotic.
+
+## Kinotic configuration
+
+Kinotic knows nothing about Summit 42, so the management server it signs users in through needs two settings:
+
+| Property | Environment variable | Value |
+|---|---|---|
+| `kinotic.apiGateway.organizationServiceZones` | `KINOTIC_APIGATEWAY_ORGANIZATIONSERVICEZONES` | `summit-42`, so organizations' users may call `AppBuilderService` and the management server routes to it |
+| `kinotic.apiGateway.cors.allowedOriginPattern` | `KINOTIC_APIGATEWAY_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; sign-up emails and social sign-ups return to that origin |
 
 ## Run locally
 
-1. Start the Kinotic stack from `kinotic/deployment/docker-compose`, with a GitHub App of your own as Kinotic's contributing guide describes.
+1. Start the Kinotic stack from `kinotic/deployment/docker-compose`, with a GitHub App of your own as Kinotic's contributing guide describes, and the management server configured as [Kinotic configuration](#kinotic-configuration) shows.
 2. Add an LLM configuration named `summit-42` with an API key on the system console.
 3. Build the UI:
    ```bash
@@ -38,7 +47,7 @@ becomes a Kinotic organization.
    KINOTIC_IGNITE_LOCALADDRESSES=<the Kinotic servers' discovery addresses> \
    ./gradlew :server:bootRun
    ```
-5. For UI work, run `bun run dev` in `frontend/` and open `http://localhost:5175`, the origin the management server's `development` profile admits.
+5. For UI work, run `bun run dev` in `frontend/` and open `http://localhost:5175`.
 
 The server builds against `org.kinotic:*:5.0.0-SNAPSHOT`, published to the Central Portal snapshots repository. Until a snapshot with Summit 42's Kinotic changes is published, publish your Kinotic checkout to Maven local and add `mavenLocal()` to the repositories.
 
@@ -46,7 +55,8 @@ The server builds against `org.kinotic:*:5.0.0-SNAPSHOT`, published to the Centr
 
 `./gradlew :server:bootBuildImage` builds `kinoticai/summit-42:<version>`. Build the UI first, because the jar serves `frontend/dist`.
 
-Run the container beside the Kinotic servers with:
+Run the container beside the Kinotic servers, whose management server is configured as
+[Kinotic configuration](#kinotic-configuration) shows, with:
 
 - `KINOTIC_IGNITE_*` set so it joins their cluster;
 - port 8080 published as `https://dev-summit42.kinotic.ai` on the development server;
