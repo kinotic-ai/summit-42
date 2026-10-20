@@ -20,6 +20,9 @@ function organizationIdOf(participant: IParticipant | undefined): string | null 
     return wire?.type === 'organization' && typeof wire.organizationId === 'string' ? wire.organizationId : null
 }
 
+// the gateway answered the session check, so a connection that keeps failing is reported rather than retried forever
+const MAX_CONNECTION_ATTEMPTS = 5
+
 let inFlight: Promise<unknown> = Promise.resolve()
 
 // connect and disconnect run one at a time, so only one connection is ever open
@@ -40,7 +43,7 @@ export function connect(): Promise<boolean> {
         if (SESSION.connected) {
             ret = true
         } else if (await hasSession()) {
-            const connectedInfo = await Kinotic.connect({ server: KINOTIC_SERVER })
+            const connectedInfo = await Kinotic.connect({ server: KINOTIC_SERVER, maxConnectionAttempts: MAX_CONNECTION_ATTEMPTS })
             SESSION.organizationId = organizationIdOf(connectedInfo.participant)
             if (SESSION.organizationId) {
                 rememberWorkspace(SESSION.organizationId)
@@ -57,6 +60,7 @@ export function signOut(): Promise<void> {
     return serialize(async () => {
         // cleared before the disconnect so the connection handler does not read it as a lost session
         SESSION.connected = false
+        SESSION.organizationId = null
         try {
             await logout()
         } finally {

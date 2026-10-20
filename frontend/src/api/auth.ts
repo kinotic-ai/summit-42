@@ -94,7 +94,10 @@ export async function hasSession(): Promise<boolean> {
 
 /** Ends this page's login. */
 export async function logout(): Promise<void> {
-    await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' })
+    const res = await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' })
+    if (!res.ok) {
+        throw new Error('Sign-out failed. Please try again.')
+    }
 }
 
 /** Signs a member of the organization in with email and password, establishing the session. */
@@ -193,7 +196,7 @@ export function providerDisplayName(provider: string | null): string {
 export function authErrorMessage(code: string): string {
     let ret: string
     switch (code) {
-        case 'no_account': ret = 'No account is linked to that sign-in. Create one first.'; break
+        case 'no_account': ret = 'No account is linked to that sign-in. Create one, or sign in with your workspace id and password.'; break
         case 'multiple_organizations': ret = 'Your account belongs to several workspaces, but the choice expired. Please sign in again.'; break
         case 'account_exists': ret = 'An account already exists for that email or identity. Sign in instead.'; break
         case 'account_disabled': ret = 'This account cannot sign in to the workspace.'; break

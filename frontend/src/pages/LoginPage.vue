@@ -63,7 +63,7 @@
                  autocorrect="off"
                  spellcheck="false"
                  placeholder="e.g. janes-apps" />
-          <span class="hint">Signed up with email and password? Enter the workspace id shown at the top of your workspace.</span>
+          <span class="hint">Signed up with email and password? Enter your workspace name or id.</span>
         </div>
         <button type="submit" class="btn btn--secondary btn--block">Continue with email</button>
       </form>
@@ -163,12 +163,18 @@ function selectWorkspace(organizationId: string) {
 }
 
 function useWorkspace() {
-  const id = workspaceInput.value.trim().toLowerCase()
+  const id = toWorkspaceId(workspaceInput.value)
   if (!id) {
-    error.value = 'Enter your workspace id.'
+    error.value = 'Enter your workspace name or id.'
     return
   }
   selectWorkspace(id)
+}
+
+// a workspace id is its name slugified, so the name the user signed up with finds it too
+function toWorkspaceId(input: string): string {
+  return input.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 function forgetWorkspace() {
