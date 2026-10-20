@@ -31,7 +31,7 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
 | Property | Environment variable | Value |
 |---|---|---|
 | `kinotic.apiGateway.organizationServiceZones` | `KINOTIC_APIGATEWAY_ORGANIZATIONSERVICEZONES` | `summit-42`, so organizations' users may call `AppBuilderService` and the management server routes to it |
-| `kinotic.apiGateway.cors.allowedOriginPattern` | `KINOTIC_APIGATEWAY_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; sign-up emails and social sign-ups return to that origin |
+| `kinotic.domain.cors.allowedOriginPattern` | `KINOTIC_DOMAIN_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; sign-up emails and social sign-ups return to that origin |
 
 ## Run locally
 
