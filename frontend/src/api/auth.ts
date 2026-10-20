@@ -149,14 +149,23 @@ export async function fetchWorkspaceChoices(): Promise<string[]> {
     return ret
 }
 
-/** Form action that starts a social sign-in naming no organization; it returns to this UI's origin. */
-export function socialLoginUrl(provider: string): string {
-    return apiUrl('/api/auth/org/login/social/start/' + encodeURIComponent(provider))
+// the gateway sends the browser back to the referer path of this UI once the sign-in completes
+function withReferer(url: string, referer: string | null): string {
+    return referer ? `${url}?referer=${encodeURIComponent(referer)}` : url
 }
 
-/** Form action that starts a sign-in through one of the organization's configurations. */
-export function workspaceLoginUrl(organizationId: string, configurationId: string): string {
-    return apiUrl(`/api/auth/org/login/${encodeURIComponent(organizationId)}/start/${encodeURIComponent(configurationId)}`)
+/**
+ * Form action that starts a social sign-in naming no organization; it returns to this UI's origin, at the referer
+ * path when one is given.
+ */
+export function socialLoginUrl(provider: string, referer: string | null): string {
+    return withReferer(apiUrl('/api/auth/org/login/social/start/' + encodeURIComponent(provider)), referer)
+}
+
+/** Form action that starts a sign-in through one of the organization's configurations, returning as socialLoginUrl does. */
+export function workspaceLoginUrl(organizationId: string, configurationId: string, referer: string | null): string {
+    return withReferer(apiUrl(`/api/auth/org/login/${encodeURIComponent(organizationId)}/start/${encodeURIComponent(configurationId)}`),
+                       referer)
 }
 
 /** Form action that starts a social sign-up; it returns to this UI's /register?token=... */

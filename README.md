@@ -1,8 +1,8 @@
 # Summit 42
 
-Summit 42 is a chat-only app builder. People sign up, describe the app they want, and Claude builds it as a regular
-Kinotic application, commits it to the app's GitHub repository and deploys it on Kinotic. Each person who signs up
-becomes a Kinotic organization.
+Summit 42 is a chat-only app builder. People sign up, create and name as many apps as they like, and describe each
+one in a chat; Claude builds it as a regular Kinotic application, commits it to the app's GitHub repository and
+deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, and never needs Kinotic's own UIs.
 
 ## Layout
 
@@ -14,15 +14,15 @@ becomes a Kinotic organization.
 ## How it works
 
 - **Requests.** The UI's calls reach Summit 42 through the management gateway. The gateway authenticates the user's session and stamps every call with their organization participant, so Summit 42 has no login code of its own.
-- **Claude.** Each chat turn runs through Spring AI with tools (`AppBuilderTools`) that:
-  - create the app: a Kinotic application and project whose repository Kinotic generates from its app template;
+- **Apps.** The user creates an app in the workspace with a name and an optional one-line description. `AppBuilderService.createApp` creates a Kinotic application with that name (its id is the slugified name, and a name the organization already uses is refused) and one project whose private GitHub repository Kinotic generates from its app template. The workspace lists the organization's applications that have a project, with the URL of each deployed app.
+- **Claude.** Each chat turn is about one app and runs through Spring AI with tools (`AppBuilderTools`) that work on that app's project:
   - read and commit the repository's files through GitHub's API;
   - wait for the deployment the commit starts, and report the URL of each UI;
   - read Kinotic's developer documentation.
-- **Acting as the user.** Each tool calls Kinotic's services through `@Proxy` interfaces. It wraps those calls in `SecurityContext.callAs` with the participant of the chat call, so Kinotic authorizes them against the user's organization.
+- **Acting as the user.** `AppBuilderService` and its tools call Kinotic's services through `@Proxy` interfaces. They wrap those calls in `SecurityContext.callAs` with the participant of the user's call, so Kinotic authorizes them against the user's organization.
 - **The model.** It comes from the platform's LLM configuration named by `summit42.llmConfigurationName` (default `summit-42`). Add that configuration on the system console's **Platform → LLM configurations** page.
-- **Repositories.** Each app's repository lives in the user's own GitHub account, through the Kinotic GitHub App. The workspace asks the user to connect GitHub before the first chat: it starts Kinotic's install with the workspace as the return URL, GitHub returns to the Kinotic portal's install callback, where the user signs in to the portal once, and the portal finishes the link and sends the browser back. Claude writes the repository with a short-lived token from Kinotic's `ProjectRepoCredentialService`.
-- **Conversations.** They are held in the server's memory, so a restart starts them over. The apps themselves live in Kinotic: each organization's app is a project of its application named `Summit 42` (id `summit-42`), which the builder finds again after a restart.
+- **Repositories.** Each app's repository lives in the user's own GitHub account, through the Kinotic GitHub App. The workspace asks the user to connect GitHub before the first app: it starts Kinotic's install with `<UI origin>/github/callback` as the return URL, GitHub returns to the management server, which forwards the browser there with GitHub's `installation_id`, `state` and `code`, and that page finishes the link with `GitHubAppInstallationService.completeInstall`. A signed-out browser signs in first and comes back to the callback. Claude writes the repository with a short-lived token from Kinotic's `ProjectRepoCredentialService`.
+- **Conversations.** Each app has its own, held in the server's memory, so a restart starts them over. The apps themselves live in Kinotic, so the list of apps survives a restart. One turn of an app runs at a time, and its conversation cannot be reset while it runs.
 
 ## Kinotic configuration
 
@@ -31,7 +31,7 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
 | Property | Environment variable | Value |
 |---|---|---|
 | `kinotic.apiGateway.organizationServiceZones` | `KINOTIC_APIGATEWAY_ORGANIZATIONSERVICEZONES` | `summit-42`, so organizations' users may call `AppBuilderService` and the management server routes to it |
-| `kinotic.domain.cors.allowedOriginPattern` | `KINOTIC_DOMAIN_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; sign-up emails and social sign-ups return to that origin |
+| `kinotic.domain.cors.allowedOriginPattern` | `KINOTIC_DOMAIN_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; sign-up emails, social sign-ups and the GitHub install return to that origin |
 
 ## Run locally
 

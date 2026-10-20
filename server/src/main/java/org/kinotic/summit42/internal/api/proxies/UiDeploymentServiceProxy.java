@@ -18,5 +18,13 @@ import java.util.List;
 @Version("1.0.0")
 public interface UiDeploymentServiceProxy {
 
+    /**
+     * @return the deployments of the UIs of the project, ordered by UI name
+     */
     Future<List<UiDeployment>> findAllForProject(String projectId);
+
+    /**
+     * @return the deployments of the UIs of all the application's projects, ordered by UI name
+     */
+    Future<List<UiDeployment>> findAllForApplication(String applicationId);
 }

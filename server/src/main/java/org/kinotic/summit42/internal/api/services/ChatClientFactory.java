@@ -41,7 +41,7 @@ public class ChatClientFactory {
      *
      * @param participant the participant of the chat turn the client is for
      * @return a client for the configuration as it is now; one built earlier is reused while the configuration is
-     * unchanged. Fails with {@link MissingLlmConfigurationException} when there is no such configuration or it
+     * unchanged. Fails with {@link BuildUnavailableException} when there is no such configuration or it
      * holds no API key
      */
     public CompletionStage<ChatClient> chatClient(OrganizationParticipant participant) {
@@ -50,7 +50,7 @@ public class ChatClientFactory {
         return securityContext.callAs(participant, () -> llmConfigurationService.findByName(name).toCompletionStage())
                 .thenCompose(configuration -> {
                     if (configuration == null) {
-                        throw new MissingLlmConfigurationException("No LLM configuration is named '" + name
+                        throw new BuildUnavailableException("No LLM configuration is named '" + name
                                 + "'. Add it on the system console's LLM configurations page.");
                     }
                     CompletionStage<ChatClient> ret;
@@ -62,7 +62,7 @@ public class ChatClientFactory {
                                                                                                .toCompletionStage())
                                 .thenApply(apiKey -> {
                                     if (apiKey == null) {
-                                        throw new MissingLlmConfigurationException("The LLM configuration '" + name
+                                        throw new BuildUnavailableException("The LLM configuration '" + name
                                                                                    + "' holds no API key");
                                     }
                                     ChatClient client = ChatClient.create(chatModel(configuration, apiKey));

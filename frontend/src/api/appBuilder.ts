@@ -22,15 +22,22 @@ export interface ChatMessage {
     text: string
 }
 
-/** The workspace's conversation with the builder, and the url of its deployed app once there is one. */
+/** An app of the workspace: a Kinotic application the user named, and the url of its UI once deployed. */
+export interface BuilderApp {
+    applicationId: string
+    name: string
+    description: string | null
+    url: string | null
+}
+
+/** The chat with the builder about one app. */
 export interface Conversation {
     messages: ChatMessage[]
-    appUrl: string | null
 }
 
 const SERVICE_IDENTIFIER = 'summit-42~org.kinotic.summit42.api.services.AppBuilderService'
 
-/** The Summit 42 app builder the signed-in workspace chats with. */
+/** The Summit 42 app builder the signed-in workspace creates its apps with and chats with about each one. */
 export class AppBuilderService {
 
     private readonly serviceProxy: IServiceProxy
@@ -39,19 +46,32 @@ export class AppBuilderService {
         this.serviceProxy = kinotic.serviceProxy(SERVICE_IDENTIFIER)
     }
 
-    /** Sends a message; the events of the builder's turn follow, and the stream completes when the turn is over. */
-    public chat(message: string): Observable<BuildEvent> {
-        return this.serviceProxy.invokeStream('chat', [message])
+    /** The workspace's apps, ordered by name. */
+    public findApps(): Promise<BuilderApp[]> {
+        return this.serviceProxy.invoke('findApps')
     }
 
-    /** The conversation so far, to render on load. */
-    public findConversation(): Promise<Conversation> {
-        return this.serviceProxy.invoke('findConversation')
+    /** Creates an app with its GitHub repository; rejects when the workspace already has an app with that name. */
+    public createApp(name: string, description: string | null): Promise<BuilderApp> {
+        return this.serviceProxy.invoke('createApp', [name, description])
     }
 
-    /** Starts the conversation over. */
-    public resetConversation(): Promise<void> {
-        return this.serviceProxy.invoke('resetConversation')
+    /**
+     * Sends a message about the app; the events of the builder's turn follow, and the stream completes when the turn
+     * is over.
+     */
+    public chat(applicationId: string, message: string): Observable<BuildEvent> {
+        return this.serviceProxy.invokeStream('chat', [applicationId, message])
+    }
+
+    /** The app's conversation so far, to render on load. */
+    public findConversation(applicationId: string): Promise<Conversation> {
+        return this.serviceProxy.invoke('findConversation', [applicationId])
+    }
+
+    /** Starts the app's conversation over. */
+    public resetConversation(applicationId: string): Promise<void> {
+        return this.serviceProxy.invoke('resetConversation', [applicationId])
     }
 }
 

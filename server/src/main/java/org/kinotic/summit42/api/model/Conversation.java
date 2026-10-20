@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * An organization's chat with the app builder.
+ * The chat about one app with the app builder.
  */
 @Getter
 @Setter
@@ -21,9 +21,4 @@ public class Conversation {
      * The messages in the order they were written.
      */
     private List<ChatMessage> messages = new ArrayList<>();
-
-    /**
-     * The URL of the organization's deployed app, or null until one is deployed.
-     */
-    private String appUrl;
 }

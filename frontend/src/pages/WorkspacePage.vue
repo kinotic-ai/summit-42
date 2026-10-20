@@ -4,19 +4,21 @@
       <BrandMark class="topbar__brand" />
       <span v-if="SESSION.organizationId" class="topbar__workspace" title="Your workspace id">{{ SESSION.organizationId }}</span>
       <span class="topbar__spacer" />
-      <button type="button" class="btn btn--ghost" :disabled="streaming || resetting || loading" @click="startOver">
-        <span v-if="resetting" class="spinner" />
-        Start over
-      </button>
       <button type="button" class="btn btn--ghost" @click="handleSignOut">Sign out</button>
     </header>
 
-    <main ref="scroller" class="chat">
-      <div class="chat__inner">
+    <AppChat v-if="selectedApp"
+             :key="selectedApp.applicationId"
+             :app="selectedApp"
+             @back="closeApp"
+             @deployed="markDeployed" />
+
+    <main v-else class="home">
+      <div class="home__inner">
         <div v-if="notice" class="alert alert--error" role="alert">{{ notice }}</div>
 
-        <div v-if="loading" class="chat__status">
-          <span class="spinner" /> Loading your conversation…
+        <div v-if="loading" class="home__status">
+          <span class="spinner" /> Loading your apps…
         </div>
 
         <div v-else-if="loadError" class="alert alert--error" role="alert">
@@ -26,258 +28,172 @@
 
         <section v-else-if="!githubLinked" class="welcome">
           <h1>Connect GitHub</h1>
-          <p class="muted">Summit 42 keeps your app's code in a GitHub repository of your own. Install the Kinotic app on your GitHub account, sign in to Kinotic once to finish, and you'll come straight back here.</p>
+          <p class="muted">Summit 42 keeps each app's code in a GitHub repository of your own. Install the Kinotic app on your GitHub account and you'll come straight back here.</p>
           <button type="button" class="btn" :disabled="connecting" @click="connectGitHub">
             <span v-if="connecting" class="spinner" />
             Continue to GitHub
           </button>
         </section>
 
-        <section v-else-if="turns.length === 0" class="welcome">
-          <h1>What do you want to build?</h1>
-          <p class="muted">Describe your app in plain words. Summit 42 builds it, deploys it, and keeps changing it as you chat.</p>
-          <div class="welcome__ideas">
-            <button v-for="idea in IDEAS" :key="idea" type="button" class="idea" @click="useIdea(idea)">{{ idea }}</button>
-          </div>
-        </section>
-
         <template v-else>
-          <div v-for="(turn, index) in turns"
-               :key="index"
-               :class="['msg', turn.role === 'USER' ? 'msg--user' : 'msg--assistant']">
-            <div v-if="turn.text" class="msg__bubble">{{ turn.text }}</div>
-            <a v-if="turn.appUrl" :href="turn.appUrl" target="_blank" rel="noopener" class="ready">
-              <span class="ready__title">Your app is live</span>
-              <span class="ready__url">{{ turn.appUrl }}</span>
-              <span class="ready__cta">Open ↗</span>
-            </a>
-            <div v-if="turn.error" class="msg__error" role="alert">{{ turn.error }}</div>
+          <section v-if="apps.length === 0" class="welcome welcome--compact">
+            <h1>Name your first app</h1>
+            <p class="muted">Give it a name, then describe what it should do. Summit 42 builds it, deploys it, and keeps changing it as you chat.</p>
+          </section>
+
+          <div v-else class="home__header">
+            <h1>Your apps</h1>
+            <button v-if="!creating" type="button" class="btn" @click="startCreating">New app</button>
           </div>
 
-          <div v-if="streaming" class="progress" aria-live="polite">
-            <span class="spinner" />
-            <span>{{ progress ?? 'Thinking…' }}</span>
-          </div>
+          <form v-if="creating || apps.length === 0" class="create" @submit.prevent="create">
+            <div class="field">
+              <label for="app-name">Name</label>
+              <input id="app-name"
+                     ref="nameInput"
+                     v-model="newName"
+                     class="input"
+                     placeholder="e.g. Dog Grooming Bookings"
+                     autocomplete="off"
+                     required />
+              <span class="hint">No two of your apps can share a name.</span>
+            </div>
+            <div class="field">
+              <label for="app-description">What it's for <span class="muted">(optional)</span></label>
+              <input id="app-description"
+                     v-model="newDescription"
+                     class="input"
+                     placeholder="e.g. Customers book grooming appointments for their dogs"
+                     autocomplete="off" />
+            </div>
+            <div class="create__actions">
+              <button v-if="apps.length > 0" type="button" class="btn btn--secondary" :disabled="saving" @click="creating = false">
+                Cancel
+              </button>
+              <button type="submit" class="btn" :disabled="saving || newName.trim().length === 0">
+                <span v-if="saving" class="spinner" />
+                {{ saving ? 'Setting up your app…' : 'Create app' }}
+              </button>
+            </div>
+          </form>
+
+          <ul v-if="apps.length > 0" class="apps">
+            <li v-for="app in apps" :key="app.applicationId">
+              <button type="button" class="app-card" @click="openApp(app)">
+                <span class="app-card__name">{{ app.name }}</span>
+                <span v-if="app.url" class="app-card__live">Live</span>
+                <span class="app-card__description muted">{{ app.description || 'No description' }}</span>
+              </button>
+            </li>
+          </ul>
         </template>
       </div>
     </main>
-
-    <footer class="composer">
-      <div class="composer__inner">
-        <a v-if="appUrl" :href="appUrl" target="_blank" rel="noopener" class="btn btn--success btn--block open-app">
-          Open your app ↗
-        </a>
-        <form class="composer__form" @submit.prevent="send">
-          <textarea ref="input"
-                    v-model="draft"
-                    rows="1"
-                    class="composer__input"
-                    :placeholder="turns.length === 0 ? 'Describe the app you want…' : 'Ask for a change…'"
-                    :disabled="loading || loadError !== null || !githubLinked"
-                    aria-label="Message"
-                    @keydown="onKeydown"
-                    @input="autosize" />
-          <button type="submit" class="btn composer__send" :disabled="!canSend" aria-label="Send">
-            <span v-if="streaming" class="spinner" />
-            <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          </button>
-        </form>
-        <p class="composer__hint muted">Enter to send · Shift+Enter for a new line</p>
-      </div>
-    </footer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import type { Subscription } from 'rxjs'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import AppChat from '@/components/AppChat.vue'
 import BrandMark from '@/components/BrandMark.vue'
-import { APP_BUILDER, type BuildEvent, type ChatRole, type Conversation } from '@/api/appBuilder'
-import { GITHUB } from '@/api/github'
+import { APP_BUILDER, type BuilderApp } from '@/api/appBuilder'
+import { GITHUB, GITHUB_CALLBACK_PATH } from '@/api/github'
 import { SESSION, signOut } from '@/api/session'
 
-/** One message as the page shows it: an assistant turn also carries what failed and the app it made live. */
-interface Turn {
-  role: ChatRole
-  text: string
-  error: string | null
-  appUrl: string | null
-}
-
-const IDEAS = [
-  'A booking app for my dog-grooming business',
-  'A simple CRM to track leads and follow-ups',
-  'An inventory tracker for a small warehouse',
-]
-
+const route = useRoute()
 const router = useRouter()
 
-const turns = ref<Turn[]>([])
-const appUrl = ref<string | null>(null)
-const draft = ref('')
+const apps = ref<BuilderApp[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
 const notice = ref<string | null>(null)
-const streaming = ref(false)
-const progress = ref<string | null>(null)
-const resetting = ref(false)
 const githubLinked = ref(false)
 const connecting = ref(false)
+const creating = ref(false)
+const saving = ref(false)
+const newName = ref('')
+const newDescription = ref('')
 
-const scroller = ref<HTMLElement | null>(null)
-const input = ref<HTMLTextAreaElement | null>(null)
+const nameInput = ref<HTMLInputElement | null>(null)
 
-let subscription: Subscription | null = null
-
-const canSend = computed(() => !streaming.value && !loading.value && loadError.value === null && githubLinked.value
-                               && draft.value.trim().length > 0)
+// the open app is named by the ?app= query, so a reload or the back button keeps it
+const selectedApp = computed(() => {
+  const id = route.query.app
+  return loading.value ? undefined : apps.value.find(app => app.applicationId === id)
+})
 
 onMounted(load)
 
-onBeforeUnmount(() => subscription?.unsubscribe())
-
 function errorText(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback
-}
-
-function show(conversation: Conversation) {
-  turns.value = (conversation.messages ?? []).map(message => ({ role: message.role, text: message.text, error: null, appUrl: null }))
-  appUrl.value = conversation.appUrl ?? null
 }
 
 async function load() {
   loading.value = true
   loadError.value = null
   try {
-    const [linked, conversation] = await Promise.all([GITHUB.isLinked(), APP_BUILDER.findConversation()])
+    const [linked, found] = await Promise.all([GITHUB.isLinked(), APP_BUILDER.findApps()])
     githubLinked.value = linked
-    show(conversation)
+    apps.value = found
   } catch (err) {
-    loadError.value = errorText(err, 'Could not load your conversation.')
+    loadError.value = errorText(err, 'Could not load your apps.')
   } finally {
     loading.value = false
   }
-  await scrollToBottom(true)
-  input.value?.focus()
 }
 
 async function connectGitHub() {
   connecting.value = true
   notice.value = null
   try {
-    window.location.assign(await GITHUB.startInstall(window.location.origin + '/'))
+    window.location.assign(await GITHUB.startInstall(window.location.origin + GITHUB_CALLBACK_PATH))
   } catch (err) {
     notice.value = errorText(err, 'Could not start connecting GitHub.')
     connecting.value = false
   }
 }
 
-function send() {
-  const message = draft.value.trim()
-  if (!canSend.value || !message) return
-
-  draft.value = ''
-  notice.value = null
-  void nextTick(autosize)
-  turns.value.push({ role: 'USER', text: message, error: null, appUrl: null })
-  turns.value.push({ role: 'ASSISTANT', text: '', error: null, appUrl: null })
-  // the pushed object is wrapped in a reactive proxy, which the stream's updates must go through to render
-  const reply = turns.value[turns.value.length - 1] as Turn
-  streaming.value = true
-  progress.value = null
-  void scrollToBottom(true)
-
-  subscription = APP_BUILDER.chat(message).subscribe({
-    next: (event: BuildEvent) => {
-      apply(reply, event)
-      void scrollToBottom(false)
-    },
-    error: (err: unknown) => {
-      reply.error = errorText(err, 'The builder stopped unexpectedly.')
-      finishTurn(reply)
-    },
-    complete: () => finishTurn(reply),
-  })
+function startCreating() {
+  creating.value = true
+  void nextTick(() => nameInput.value?.focus())
 }
 
-function apply(reply: Turn, event: BuildEvent) {
-  switch (event.type) {
-    case 'TEXT':
-      reply.text += event.text ?? ''
-      break
-    case 'PROGRESS':
-      progress.value = event.text
-      break
-    case 'APP_READY':
-      reply.appUrl = event.url
-      appUrl.value = event.url
-      break
-    case 'ERROR':
-      reply.error = event.text || 'Something went wrong.'
-      break
-  }
-}
-
-function finishTurn(reply: Turn) {
-  streaming.value = false
-  progress.value = null
-  subscription = null
-  if (!reply.text && !reply.error && !reply.appUrl) {
-    turns.value = turns.value.filter(turn => turn !== reply)
-  }
-  void nextTick(() => input.value?.focus())
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-    event.preventDefault()
-    send()
-  }
-}
-
-function autosize() {
-  const el = input.value
-  if (el) {
-    el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px'
-  }
-}
-
-function useIdea(idea: string) {
-  draft.value = idea
-  void nextTick(() => {
-    autosize()
-    input.value?.focus()
-  })
-}
-
-// follows new content only while the reader is already at the bottom, so scrolling back through history is not interrupted
-async function scrollToBottom(force: boolean) {
-  const el = scroller.value
-  const nearBottom = el !== null && el.scrollHeight - el.scrollTop - el.clientHeight < 120
-  await nextTick()
-  if (el && (force || nearBottom)) {
-    el.scrollTop = el.scrollHeight
-  }
-}
-
-async function startOver() {
-  if (!window.confirm('Start over? This clears the conversation.')) return
-  resetting.value = true
+async function create() {
+  const name = newName.value.trim()
+  if (!name || saving.value) return
+  saving.value = true
   notice.value = null
   try {
-    await APP_BUILDER.resetConversation()
-    await load()
+    const app = await APP_BUILDER.createApp(name, newDescription.value.trim() || null)
+    apps.value = [...apps.value, app].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+    newName.value = ''
+    newDescription.value = ''
+    creating.value = false
+    openApp(app)
   } catch (err) {
-    notice.value = errorText(err, 'Could not start over.')
+    notice.value = errorText(err, 'Could not create the app.')
   } finally {
-    resetting.value = false
+    saving.value = false
   }
+}
+
+function openApp(app: BuilderApp) {
+  notice.value = null
+  void router.push({ query: { app: app.applicationId } })
+}
+
+function markDeployed(url: string) {
+  if (selectedApp.value) {
+    selectedApp.value.url = url
+  }
+}
+
+function closeApp() {
+  void router.push({ query: {} })
 }
 
 async function handleSignOut() {
-  subscription?.unsubscribe()
   await signOut().catch(() => {})
   await router.replace('/login')
 }
@@ -318,19 +234,18 @@ async function handleSignOut() {
   flex: 1;
 }
 
-.chat {
+.home {
   flex: 1;
   overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
-.chat__inner {
+.home__inner {
   max-width: 48rem;
   margin: 0 auto;
-  padding: 1.5rem 1rem 1rem;
+  padding: 1.5rem 1rem 2rem;
 }
 
-.chat__status {
+.home__status {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -339,201 +254,95 @@ async function handleSignOut() {
   color: var(--text-muted);
 }
 
-.welcome {
-  padding: 12vh 0 2rem;
-  text-align: center;
+.welcome--compact {
+  padding-top: 8vh;
 }
 
-.welcome h1 {
-  margin: 0 0 0.5rem;
-  font-size: clamp(1.6rem, 4vw, 2.2rem);
-  letter-spacing: -0.03em;
+.home__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.5rem 0 1.25rem;
 }
 
-.welcome p {
+.home__header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+}
+
+.create {
   max-width: 32rem;
-  margin: 0 auto 1.75rem;
-}
-
-.welcome__ideas {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.6rem;
-}
-
-.idea {
-  padding: 0.55rem 0.9rem;
+  margin: 0 auto 1.5rem;
+  padding: 1.25rem 1.25rem 1rem;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface);
-  color: var(--text);
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  box-shadow: var(--shadow);
 }
 
-.idea:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.msg {
+.create__actions {
   display: flex;
-  flex-direction: column;
+  justify-content: flex-end;
   gap: 0.5rem;
-  margin-bottom: 1rem;
 }
 
-.msg--user {
-  align-items: flex-end;
+.apps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.msg--assistant {
-  align-items: flex-start;
-}
-
-.msg__bubble {
-  max-width: min(85%, 40rem);
-  padding: 0.7rem 0.95rem;
-  border-radius: 16px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.msg--user .msg__bubble {
-  background: var(--user-bubble);
-  color: var(--user-text);
-  border-bottom-right-radius: 4px;
-}
-
-.msg--assistant .msg__bubble {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-bottom-left-radius: 4px;
-}
-
-.msg__error {
-  max-width: min(85%, 40rem);
-  padding: 0.6rem 0.9rem;
-  border-radius: 12px;
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: 0.92rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.ready {
+.app-card {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 0.1rem 1rem;
+  gap: 0.3rem 0.75rem;
   align-items: center;
-  width: min(85%, 26rem);
-  padding: 0.8rem 1rem;
-  border: 1px solid var(--success);
-  border-radius: 14px;
-  background: var(--success-soft);
-  color: var(--text);
-}
-
-.ready:hover {
-  text-decoration: none;
-  filter: brightness(0.98);
-}
-
-.ready__title {
-  font-weight: 700;
-  color: var(--success);
-}
-
-.ready__url {
-  grid-column: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.ready__cta {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  font-weight: 600;
-  color: var(--success);
-}
-
-.progress {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0.85rem;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.9rem;
-}
-
-.composer {
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-.composer__inner {
-  max-width: 48rem;
-  margin: 0 auto;
-  padding: 0.75rem 1rem 0.5rem;
-}
-
-.open-app {
-  margin-bottom: 0.65rem;
-}
-
-.composer__form {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  padding: 0.4rem 0.4rem 0.4rem 0.9rem;
+  width: 100%;
+  height: 100%;
+  padding: 1rem 1.1rem;
   border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--bg);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.composer__form:focus-within {
+.app-card:hover {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.composer__input {
-  flex: 1;
-  min-height: 2.5rem;
-  max-height: 200px;
-  padding: 0.5rem 0;
-  border: none;
-  background: transparent;
-  outline: none;
-  resize: none;
-  line-height: 1.5;
+.app-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
-.composer__send {
-  width: 2.5rem;
-  min-height: 2.5rem;
-  padding: 0;
-  border-radius: 12px;
-}
-
-.composer__send svg {
-  width: 1.2rem;
-  height: 1.2rem;
-}
-
-.composer__hint {
-  margin: 0.4rem 0 0;
+.app-card__live {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: var(--success-soft);
+  color: var(--success);
   font-size: 0.75rem;
-  text-align: center;
+  font-weight: 600;
+}
+
+.app-card__description {
+  grid-column: 1 / span 2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 0.9rem;
 }
 
 @media (max-width: 560px) {
@@ -556,25 +365,12 @@ async function handleSignOut() {
     font-size: 0.9rem;
   }
 
-  .chat__inner {
-    padding: 1rem 0.75rem;
+  .home__inner {
+    padding: 1rem 0.75rem 1.5rem;
   }
 
-  .msg__bubble,
-  .msg__error {
-    max-width: 92%;
-  }
-
-  .ready {
-    width: 92%;
-  }
-
-  .composer__inner {
-    padding: 0.6rem 0.75rem 0.4rem;
-  }
-
-  .composer__hint {
-    display: none;
+  .create {
+    padding: 1rem 0.9rem 0.75rem;
   }
 }
 </style>

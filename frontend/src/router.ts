@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { GITHUB_CALLBACK_PATH } from '@/api/github'
 import { connect, SESSION } from '@/api/session'
 
 declare module 'vue-router' {
@@ -12,6 +13,7 @@ const router = createRouter({
     history: createWebHistory(),
     routes: [
         { path: '/', component: () => import('@/pages/WorkspacePage.vue') },
+        { path: GITHUB_CALLBACK_PATH, component: () => import('@/pages/GitHubCallbackPage.vue') },
         { path: '/login', component: () => import('@/pages/LoginPage.vue'), meta: { public: true } },
         { path: '/signup', component: () => import('@/pages/SignupPage.vue'), meta: { public: true } },
         { path: '/signup/verify', component: () => import('@/pages/VerifyEmailPage.vue'), meta: { public: true } },
@@ -20,15 +22,17 @@ const router = createRouter({
     ],
 })
 
+// a signed-out visit goes to /login with the page it was for as its referer, where the sign-in returns
 router.beforeEach(async to => {
-    let ret: true | { path: string; query?: Record<string, string> } = true
+    let ret: true | { path: string; query: Record<string, string> } = true
     if (!to.meta.public && !SESSION.connected) {
+        const query: Record<string, string> = to.fullPath === '/' ? {} : { referer: to.fullPath }
         try {
             if (!await connect()) {
-                ret = { path: '/login' }
+                ret = { path: '/login', query }
             }
         } catch {
-            ret = { path: '/login', query: { error: 'unreachable' } }
+            ret = { path: '/login', query: { ...query, error: 'unreachable' } }
         }
     }
     return ret

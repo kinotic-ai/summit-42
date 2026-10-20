@@ -4,8 +4,9 @@ import io.vertx.core.Future;
 import org.kinotic.core.api.annotations.Proxy;
 import org.kinotic.core.api.annotations.Version;
 import org.kinotic.core.api.annotations.Zone;
+import org.kinotic.core.api.crud.Page;
+import org.kinotic.core.api.crud.Pageable;
 import org.kinotic.domain.api.model.Application;
-import org.kinotic.domain.api.model.TenantManagement;
 import org.kinotic.domain.api.utils.DomainUtil;
 
 /**
@@ -18,10 +19,17 @@ import org.kinotic.domain.api.utils.DomainUtil;
 public interface ApplicationServiceProxy {
 
     /**
-     * Creates the application whose id the name slugifies to, unless the organization already has it.
+     * Creates the application under the id its name slugifies to, and waits for it to be searchable.
      *
-     * @param tenantManagement who administers the application's tenants, or null for tenant administrators
-     * @return the created application, or the existing one with that id
+     * @param application the application to create, carrying the organization id of the participant
+     * @return the created application; fails when the organization already has an application with that name
      */
-    Future<Application> createApplicationIfNotExist(String name, String description, TenantManagement tenantManagement);
+    Future<Application> createSync(Application application);
+
+    Future<Page<Application>> findAll(Pageable pageable);
+
+    /**
+     * Deletes the application; fails when it has projects.
+     */
+    Future<Void> deleteById(String id);
 }
