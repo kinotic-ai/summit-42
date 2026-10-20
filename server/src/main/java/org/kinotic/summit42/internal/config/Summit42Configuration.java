@@ -1,5 +1,8 @@
 package org.kinotic.summit42.internal.config;
 
+import io.vertx.core.Vertx;
+import io.vertx.ext.web.client.WebClient;
+import io.vertx.ext.web.client.WebClientOptions;
 import org.kinotic.core.api.event.ZonePartitioningService;
 import org.kinotic.domain.api.utils.DomainUtil;
 import org.kinotic.summit42.api.services.AppBuilderService;
@@ -25,5 +28,14 @@ public class Summit42Configuration {
                                           Set.of(AppBuilderService.ZONE,
                                                  DomainUtil.MANAGEMENT_API_ZONE,
                                                  DomainUtil.SYSTEM_API_ZONE));
+    }
+
+    /**
+     * The HTTP client Summit 42 calls GitHub's API and reads Kinotic's documentation with, identifying itself as
+     * summit-42.
+     */
+    @Bean
+    public WebClient webClient(Vertx vertx) {
+        return WebClient.create(vertx, new WebClientOptions().setUserAgent("summit-42"));
     }
 }

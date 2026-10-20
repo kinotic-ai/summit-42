@@ -20,13 +20,22 @@ import org.kinotic.management.api.model.deployment.ProjectDeployment;
 public interface ProjectServiceProxy {
 
     /**
-     * Creates the project and its GitHub repository, generated from the platform's app template.
+     * Creates the project and its GitHub repository, generated from the platform's app template. The project is
+     * marked {@link org.kinotic.management.api.model.RepositoryConnectionStatus#INITIALIZATION_FAILED} when the
+     * repository was created but the template could not be rendered into it.
      */
     Future<Project> createSync(Project project);
 
-    Future<Project> findById(String id);
-
     Future<Page<Project>> findAllForApplication(String applicationId, Pageable pageable);
+
+    /**
+     * Renders the template into the repository of a project marked
+     * {@link org.kinotic.management.api.model.RepositoryConnectionStatus#INITIALIZATION_FAILED}.
+     *
+     * @return the project, marked {@link org.kinotic.management.api.model.RepositoryConnectionStatus#CONNECTED};
+     * fails when the rendering fails again
+     */
+    Future<Project> retryRepoInitialization(String projectId);
 
     /**
      * @return the project's deployment, or null before its first deployment

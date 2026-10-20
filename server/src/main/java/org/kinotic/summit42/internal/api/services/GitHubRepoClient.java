@@ -1,7 +1,6 @@
 package org.kinotic.summit42.internal.api.services;
 
 import io.vertx.core.Future;
-import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonArray;
@@ -9,20 +8,25 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
-import io.vertx.ext.web.client.WebClientOptions;
+import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.Strings;
 import org.kinotic.management.api.model.ProjectRepoToken;
 import org.springframework.stereotype.Component;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Reads and commits the files of a project's GitHub repository through GitHub's REST API, with a token from
- * {@code ProjectRepoCredentialService}.
+ * {@code ProjectRepoCredentialService}. A path may start with {@code /}; it is read from the repository's root
+ * either way.
  */
 @Component
+@RequiredArgsConstructor
 public class GitHubRepoClient {
 
     private static final String API_HOST = "api.github.com";
@@ -31,31 +35,25 @@ public class GitHubRepoClient {
     private static final String API_VERSION_HEADER = "X-GitHub-Api-Version";
     private static final String API_VERSION = "2022-11-28";
     private static final String REGULAR_FILE_MODE = "100644";
+    private static final String BLOB = "blob";
 
     private final WebClient webClient;
 
-    public GitHubRepoClient(Vertx vertx) {
-        this.webClient = WebClient.create(vertx, new WebClientOptions().setUserAgent("summit-42"));
-    }
-
     /**
-     * @return the path of every file on the repository's default branch
+     * @return the files on the repository's default branch
      */
-    public Future<List<String>> listFiles(ProjectRepoToken token) {
-        String repo = repoFullName(token);
-        return request(HttpMethod.GET, "/repos/" + repo + "/git/trees/" + token.getDefaultBranch() + "?recursive=1", token, ACCEPT)
-                .send()
-                .compose(resp -> requireStatus(resp, 200, "list files"))
-                .map(resp -> {
-                    List<String> ret = new ArrayList<>();
-                    JsonArray tree = resp.bodyAsJsonObject().getJsonArray("tree", new JsonArray());
-                    for (int i = 0; i < tree.size(); i++) {
-                        JsonObject entry = tree.getJsonObject(i);
-                        if ("blob".equals(entry.getString("type"))) {
-                            ret.add(entry.getString("path"));
+    public Future<RepoTree> listFiles(ProjectRepoToken token) {
+        return tree(token, token.getDefaultBranch())
+                .map(tree -> {
+                    List<String> paths = new ArrayList<>();
+                    JsonArray entries = tree.getJsonArray("tree", new JsonArray());
+                    for (int i = 0; i < entries.size(); i++) {
+                        JsonObject entry = entries.getJsonObject(i);
+                        if (BLOB.equals(entry.getString("type"))) {
+                            paths.add(entry.getString("path"));
                         }
                     }
-                    return ret;
+                    return new RepoTree(paths, tree.getBoolean("truncated", false));
                 });
     }
 
@@ -64,7 +62,7 @@ public class GitHubRepoClient {
      */
     public Future<String> readFile(ProjectRepoToken token, String path) {
         String repo = repoFullName(token);
-        String encodedPath = URLEncoder.encode(path, StandardCharsets.UTF_8).replace("%2F", "/").replace("+", "%20");
+        String encodedPath = URLEncoder.encode(repoPath(path), StandardCharsets.UTF_8).replace("%2F", "/").replace("+", "%20");
         return request(HttpMethod.GET, "/repos/" + repo + "/contents/" + encodedPath + "?ref=" + token.getDefaultBranch(), token, RAW)
                 .send()
                 .compose(resp -> resp.statusCode() == 404
@@ -73,7 +71,8 @@ public class GitHubRepoClient {
     }
 
     /**
-     * Commits the files to the default branch in one commit on top of its head, which deploys the project.
+     * Commits the files to the default branch in one commit on top of its head, which deploys the project. A file
+     * that exists keeps its mode, so an executable stays executable.
      *
      * @return the new commit's sha
      */
@@ -88,8 +87,10 @@ public class GitHubRepoClient {
                         .send()
                         .compose(resp -> requireStatus(resp, 200, "read the head commit"))
                         .map(resp -> resp.bodyAsJsonObject().getJsonObject("tree").getString("sha"))
-                        .compose(baseTree -> request(HttpMethod.POST, "/repos/" + repo + "/git/trees", token, ACCEPT)
-                                .sendJsonObject(new JsonObject().put("base_tree", baseTree).put("tree", treeEntries(files))))
+                        .compose(baseTree -> tree(token, baseTree)
+                                .compose(base -> request(HttpMethod.POST, "/repos/" + repo + "/git/trees", token, ACCEPT)
+                                        .sendJsonObject(new JsonObject().put("base_tree", baseTree)
+                                                                        .put("tree", treeEntries(files, modes(base))))))
                         .compose(resp -> requireStatus(resp, 201, "write the tree"))
                         .compose(resp -> request(HttpMethod.POST, "/repos/" + repo + "/git/commits", token, ACCEPT)
                                 .sendJsonObject(new JsonObject()
@@ -104,13 +105,34 @@ public class GitHubRepoClient {
                         .map(commit));
     }
 
-    private static JsonArray treeEntries(List<RepoFile> files) {
+    // the recursive tree of a branch or tree sha
+    private Future<JsonObject> tree(ProjectRepoToken token, String treeish) {
+        return request(HttpMethod.GET, "/repos/" + repoFullName(token) + "/git/trees/" + treeish + "?recursive=1", token, ACCEPT)
+                .send()
+                .compose(resp -> requireStatus(resp, 200, "list files"))
+                .map(HttpResponse::bodyAsJsonObject);
+    }
+
+    private static Map<String, String> modes(JsonObject tree) {
+        Map<String, String> ret = new HashMap<>();
+        JsonArray entries = tree.getJsonArray("tree", new JsonArray());
+        for (int i = 0; i < entries.size(); i++) {
+            JsonObject entry = entries.getJsonObject(i);
+            if (BLOB.equals(entry.getString("type"))) {
+                ret.put(entry.getString("path"), entry.getString("mode"));
+            }
+        }
+        return ret;
+    }
+
+    private static JsonArray treeEntries(List<RepoFile> files, Map<String, String> modes) {
         JsonArray ret = new JsonArray();
         for (RepoFile file : files) {
+            String path = repoPath(file.path());
             JsonObject entry = new JsonObject()
-                    .put("path", file.path())
-                    .put("mode", REGULAR_FILE_MODE)
-                    .put("type", "blob");
+                    .put("path", path)
+                    .put("mode", modes.getOrDefault(path, REGULAR_FILE_MODE))
+                    .put("type", BLOB);
             // a null sha removes the path from the base tree
             if (file.content() == null) {
                 entry.putNull("sha");
@@ -120,6 +142,10 @@ public class GitHubRepoClient {
             ret.add(entry);
         }
         return ret;
+    }
+
+    private static String repoPath(String path) {
+        return Strings.CS.removeStart(path, "/");
     }
 
     // the clone URL is https://github.com/<owner>/<repo>.git

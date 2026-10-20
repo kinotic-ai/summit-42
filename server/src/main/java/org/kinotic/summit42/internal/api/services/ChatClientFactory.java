@@ -1,7 +1,8 @@
 package org.kinotic.summit42.internal.api.services;
 
-import io.vertx.core.Future;
 import lombok.RequiredArgsConstructor;
+import org.kinotic.core.api.security.SecurityContext;
+import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
 import org.kinotic.summit42.api.config.Summit42Properties;
 import org.kinotic.summit42.internal.api.proxies.LlmConfigurationServiceProxy;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
@@ -14,6 +15,8 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 
 /**
  * Builds the {@link ChatClient} the app builder talks to Claude through, from the platform's LLM configuration
@@ -27,37 +30,48 @@ public class ChatClientFactory {
     private static final int DEFAULT_MAX_TOKENS = 32_000;
 
     private final LlmConfigurationServiceProxy llmConfigurationService;
+    private final SecurityContext securityContext;
     private final Summit42Properties properties;
 
     private volatile CachedClient cached;
 
     /**
+     * Reads the configuration and its API key as the participant, which the LLM configuration service requires to
+     * be an organization participant.
+     *
+     * @param participant the participant of the chat turn the client is for
      * @return a client for the configuration as it is now; one built earlier is reused while the configuration is
-     * unchanged
+     * unchanged. Fails with {@link MissingLlmConfigurationException} when there is no such configuration or it
+     * holds no API key
      */
-    public Future<ChatClient> chatClient() {
+    public CompletionStage<ChatClient> chatClient(OrganizationParticipant participant) {
         String name = properties.getLlmConfigurationName();
-        return llmConfigurationService.findByName(name).compose(configuration -> {
-            if (configuration == null) {
-                throw new IllegalStateException("No LLM configuration is named '" + name
-                                                + "'. Add it on the system console's LLM configurations page.");
-            }
-            Future<ChatClient> ret;
-            CachedClient current = cached;
-            if (current != null && current.matches(configuration)) {
-                ret = Future.succeededFuture(current.client());
-            } else {
-                ret = llmConfigurationService.findApiKey(configuration.getId()).map(apiKey -> {
-                    if (apiKey == null) {
-                        throw new IllegalStateException("The LLM configuration '" + name + "' holds no API key");
+        // callAs binds the participant only to proxy calls its supplier starts, so each call gets its own
+        return securityContext.callAs(participant, () -> llmConfigurationService.findByName(name).toCompletionStage())
+                .thenCompose(configuration -> {
+                    if (configuration == null) {
+                        throw new MissingLlmConfigurationException("No LLM configuration is named '" + name
+                                + "'. Add it on the system console's LLM configurations page.");
                     }
-                    ChatClient client = ChatClient.create(chatModel(configuration, apiKey));
-                    cached = new CachedClient(configuration.getId(), configuration.getUpdated(), client);
-                    return client;
+                    CompletionStage<ChatClient> ret;
+                    CachedClient current = cached;
+                    if (current != null && current.matches(configuration)) {
+                        ret = CompletableFuture.completedFuture(current.client());
+                    } else {
+                        ret = securityContext.callAs(participant, () -> llmConfigurationService.findApiKey(configuration.getId())
+                                                                                               .toCompletionStage())
+                                .thenApply(apiKey -> {
+                                    if (apiKey == null) {
+                                        throw new MissingLlmConfigurationException("The LLM configuration '" + name
+                                                                                   + "' holds no API key");
+                                    }
+                                    ChatClient client = ChatClient.create(chatModel(configuration, apiKey));
+                                    cached = new CachedClient(configuration.getId(), configuration.getUpdated(), client);
+                                    return client;
+                                });
+                    }
+                    return ret;
                 });
-            }
-            return ret;
-        });
     }
 
     private static ChatModel chatModel(LlmConfiguration configuration, String apiKey) {

@@ -21,6 +21,8 @@ public interface LlmConfigurationServiceProxy {
     Future<LlmConfiguration> findByName(String name);
 
     /**
+     * Refuses a call not made as an organization participant.
+     *
      * @return the API key held for the configuration, or null when none is held
      */
     Future<String> findApiKey(String id);

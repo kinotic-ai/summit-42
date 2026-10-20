@@ -22,7 +22,7 @@ becomes a Kinotic organization.
 - **Acting as the user.** Each tool calls Kinotic's services through `@Proxy` interfaces. It wraps those calls in `SecurityContext.callAs` with the participant of the chat call, so Kinotic authorizes them against the user's organization.
 - **The model.** It comes from the platform's LLM configuration named by `summit42.llmConfigurationName` (default `summit-42`). Add that configuration on the system console's **Platform → LLM configurations** page.
 - **Repositories.** Each app's repository lives in the user's own GitHub account, through the Kinotic GitHub App. The workspace asks the user to connect GitHub before the first chat: it starts Kinotic's install with the workspace as the return URL, GitHub returns to the Kinotic portal's install callback, where the user signs in to the portal once, and the portal finishes the link and sends the browser back. Claude writes the repository with a short-lived token from Kinotic's `ProjectRepoCredentialService`.
-- **Conversations.** They are held in the server's memory, so a restart starts them over. The apps themselves live in Kinotic.
+- **Conversations.** They are held in the server's memory, so a restart starts them over. The apps themselves live in Kinotic: each organization's app is its application with the id `summit-42`, which the builder finds again after a restart.
 
 ## Kinotic configuration
 
