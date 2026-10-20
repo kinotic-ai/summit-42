@@ -1,0 +1,11 @@
+pluginManagement {
+    plugins {
+        id 'org.springframework.boot' version "${springBootVersion}"
+        id 'io.spring.dependency-management' version "${springDependencyManagementVersion}"
+        id 'io.freefair.lombok' version "${lombokPluginVersion}"
+    }
+}
+
+rootProject.name = 'summit-42'
+
+include 'server'

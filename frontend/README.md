@@ -1,0 +1,49 @@
+# Summit 42 frontend
+
+The chat-only UI of Summit 42: people sign up, describe the app they want, and the Summit 42 server builds and
+deploys it as a Kinotic app. A Vue 3 + Vite + TypeScript SPA that signs in to the Kinotic management gateway and
+talks to the `summit-42` zone's `AppBuilderService` over Kinotic's STOMP connection (`@kinotic-ai/core`).
+
+## Run against a local Kinotic
+
+Start the Kinotic management server (gateway on `localhost:58503`) and the Summit 42 server, then:
+
+```bash
+bun install
+bun run dev          # http://localhost:5175
+```
+
+Port 5175 is the origin the management server's `development` profile admits in its CORS pattern; with the email
+service disabled locally, the sign-up verification link is printed in the management server's log.
+
+## Configuration
+
+Build-time Vite variables (copy `.env.example` to `.env.local` to override):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VITE_KINOTIC_HOST` | `localhost` | Host of the Kinotic management gateway |
+| `VITE_KINOTIC_PORT` | `58503` | Its port |
+| `VITE_KINOTIC_USE_SSL` | `false` | `true` for `https`/`wss` |
+
+REST calls go to `http(s)://host:port` and the STOMP connection to the same host and port. For the Kinotic
+development server use `dev-api.kinotic.ai`, `443`, `true`.
+
+## Build
+
+```bash
+bun run build        # vue-tsc type-check, then vite build into dist/
+```
+
+`dist/` is a history-mode SPA: whatever serves it must answer unknown paths (`/login`, `/signup/verify`, `/register`)
+with `index.html`.
+
+## Routes
+
+| Path | Page |
+|---|---|
+| `/` | The workspace: the chat with the builder (redirects to `/login` without a session) |
+| `/login` | Sign in: social buttons, or email and password for the workspace this browser last used |
+| `/signup` | Create an account with a social provider or email |
+| `/signup/verify?token=` | The emailed link's page: name the workspace and set a password |
+| `/register?token=` | Where a social sign-up returns: name the workspace |

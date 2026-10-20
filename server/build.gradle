@@ -1,0 +1,111 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot'
+    id 'io.spring.dependency-management'
+    id 'io.freefair.lombok'
+}
+
+group = 'org.kinotic'
+version = summit42Version
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'Central Portal Snapshots'
+        url = uri('https://central.sonatype.com/repository/maven-snapshots/')
+    }
+}
+
+dependencyManagement {
+    imports {
+        // the versions Kinotic builds against, which its published modules expect at runtime
+        mavenBom("org.springframework.boot:spring-boot-dependencies:${springBootVersion}") {
+            bomProperty 'httpclient5.version', httpclient5Version
+            bomProperty 'httpcore5.version', httpcore5Version
+            bomProperty 'jackson-2-bom.version', jackson2Version
+            bomProperty 'jackson-bom.version', jacksonVersion
+            bomProperty 'log4j2.version', log4j2Version
+            bomProperty 'netty.version', nettyVersion
+        }
+        mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+    }
+    dependencies {
+        dependency "org.kinotic:kinotic-core:${kinoticVersion}"
+        dependency "org.kinotic:kinotic-domain:${kinoticVersion}"
+        dependency "org.kinotic:kinotic-management-api:${kinoticVersion}"
+        dependency "org.kinotic:kinotic-system-api:${kinoticVersion}"
+        dependency "io.vertx:vertx-core:${vertxVersion}"
+        dependency "io.vertx:vertx-web:${vertxVersion}"
+        dependency "io.vertx:vertx-web-client:${vertxVersion}"
+    }
+}
+
+dependencies {
+    implementation 'org.kinotic:kinotic-core'
+    // For the participant model, the services' model types and the Jackson module the cluster's
+    // events carry them with; Summit42Application excludes these modules' auto-configuration
+    implementation 'org.kinotic:kinotic-domain'
+    implementation 'org.kinotic:kinotic-management-api'
+    implementation 'org.kinotic:kinotic-system-api'
+
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.ai:spring-ai-client-chat'
+    implementation 'org.springframework.ai:spring-ai-anthropic'
+    implementation 'org.springframework.ai:spring-ai-openai'
+
+    implementation 'io.vertx:vertx-core'
+    implementation 'io.vertx:vertx-web'
+    implementation 'io.vertx:vertx-web-client'
+    implementation 'io.projectreactor:reactor-core'
+    implementation 'org.apache.commons:commons-lang3'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    // Kinotic's service schemas read method parameter names
+    options.compilerArgs << '-parameters'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// The UI is served from the jar's webroot; build it first with `bun run build` in frontend/
+tasks.named('processResources') {
+    from(rootProject.file('frontend/dist')) {
+        into 'webroot'
+    }
+}
+
+// Ignite reads JDK internals, which Kinotic's servers open the same way
+def addOpens = ['--add-opens=java.base/java.nio=ALL-UNNAMED',
+                '--add-opens=java.base/java.util=ALL-UNNAMED',
+                '--add-opens=java.base/java.lang.invoke=ALL-UNNAMED',
+                '--add-opens=java.base/java.lang=ALL-UNNAMED']
+
+tasks.named('bootRun') {
+    jvmArgs addOpens
+}
+
+tasks.named('bootBuildImage') {
+    imageName = "kinoticai/summit-42:${project.version}"
+    environment = [
+        'BP_HEALTH_CHECKER_ENABLED'    : 'true',
+        'THC_PATH'                     : '/health',
+        'BPE_DELIM_JAVA_TOOL_OPTIONS'  : ' ',
+        'BPE_APPEND_JAVA_TOOL_OPTIONS' : (['-XX:+DisableExplicitGC'] + addOpens).join(' '),
+    ]
+    buildpacks = [
+        'urn:cnb:builder:paketo-buildpacks/java',
+        'docker.io/paketobuildpacks/health-checker'
+    ]
+}

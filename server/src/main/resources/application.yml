@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: summit-42
+
+# Summit 42 joins the Kinotic cluster as a member; deployments set the cluster's discovery, for example
+# KINOTIC_IGNITE_DISCOVERYTYPE=LOCAL with KINOTIC_IGNITE_LOCALADDRESSES naming the Kinotic servers.
+
+summit42:
+  llmConfigurationName: summit-42
