@@ -11,10 +11,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
- * One chat turn, as the app builder's tools see it: the signed-in user it acts for, their organization's session,
- * and where the tools report progress. The turn keeps its session's {@link BuilderSession#isTurnRunning()} set
- * until its stream has ended and the tool call running at that moment has returned, so no other turn starts while
- * this one may still commit.
+ * One chat turn, as the app builder's tools see it: the signed-in user it acts for, the app's session, the project
+ * the app is built in, and where the tools report progress. The turn keeps its session's
+ * {@link BuilderSession#isTurnRunning()} set until its stream has ended and the tool call running at that moment has
+ * returned, so no other turn of the app starts while this one may still commit.
  */
 @Getter
 @RequiredArgsConstructor
@@ -26,9 +26,14 @@ public class BuilderTurn {
     private final OrganizationParticipant participant;
 
     /**
-     * The organization's session.
+     * The app's session.
      */
     private final BuilderSession session;
+
+    /**
+     * The project the app is built in, whose repository is connected.
+     */
+    private final String projectId;
 
     /**
      * Receives the progress events the turn streams.

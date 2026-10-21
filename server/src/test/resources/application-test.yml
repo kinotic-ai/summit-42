@@ -1,0 +1,10 @@
+# The tests boot Summit 42 as the only member of a cluster of its own: discovery finds no node but this one, so
+# a Kinotic cluster running on the same machine is never joined, and the Kinotic services Summit 42 calls have no
+# handlers.
+kinotic:
+  eventBusClusterHost: 127.0.0.1
+  ignite:
+    discoveryType: LOCAL
+    localAddress: 127.0.0.1
+    discoveryPort: 47650
+    localAddresses: 127.0.0.1:47650

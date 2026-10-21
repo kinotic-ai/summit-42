@@ -9,8 +9,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Import;
 
 /**
- * Summit 42, the chat app builder: a Kinotic cluster member that hosts the {@code summit-42} zone's
- * {@link org.kinotic.summit42.api.services.AppBuilderService} and serves the Summit 42 UI.
+ * Summit 42, the chat app builder: a Kinotic cluster member that hosts
+ * {@link org.kinotic.summit42.api.services.AppBuilderService} in the {@code management-api} zone and serves the
+ * Summit 42 UI.
  */
 // The Kinotic modules are on the classpath for their model types and proxied services, which the cluster's
 // servers host; their own services need Elasticsearch, so their auto-configuration is excluded. The

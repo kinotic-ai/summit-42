@@ -1,0 +1,249 @@
+name: Build and Publish
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+    paths-ignore: &ignored-paths
+      - '**.md'
+  # Builds and tests the merge result before a change lands. Staging to ghcr.io needs packages: write,
+  # which GitHub withholds from pull requests opened from forks, so those runs fail at staging; push
+  # the branch to this repository to build it.
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths-ignore: *ignored-paths
+  # Nightly rebuild against the latest Kinotic 5.0.0-SNAPSHOT, which changes without a commit here.
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '25'
+  BUN_VERSION: '1.4.2'
+
+# The server image is staged on ghcr.io under sha-<commit> and promoted to Docker Hub by the results
+# job only after every job passes, so the tag deployments pull is never advanced to an unvalidated
+# build. Nothing reads the staged tags except this workflow; ghcr-cleanup.yml prunes them once they
+# are past the window in which a run's jobs might still be re-run.
+jobs:
+  # Type-checks and builds the UI, then compiles the server and runs its tests.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'zulu'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Build UI
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Build with Gradle
+        run: ./gradlew check
+
+  # Builds the image, which serves the UI from the jar, and stages it without waiting on the tests in
+  # the build job.
+  server_image:
+    name: Server Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'zulu'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      # The UI reads the management gateway's address at build time, so the image targets the
+      # gateway these repository variables name, or a local one when they are unset.
+      - name: Build UI
+        working-directory: frontend
+        env:
+          VITE_KINOTIC_HOST: ${{ vars.VITE_KINOTIC_HOST }}
+          VITE_KINOTIC_PORT: ${{ vars.VITE_KINOTIC_PORT }}
+          VITE_KINOTIC_USE_SSL: ${{ vars.VITE_KINOTIC_USE_SSL }}
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Build server image
+        run: ./gradlew :server:bootBuildImage
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stage server image on ghcr.io
+        run: |
+          version=$(grep -E '^summit42Version=' gradle.properties | cut -d= -f2)
+          staged="ghcr.io/${{ github.repository_owner }}/summit-42:sha-${{ github.sha }}"
+          docker tag "kinoticai/summit-42:${version}" "$staged"
+          docker push "$staged"
+
+  # Inventories the staged image as a CycloneDX SBOM and scans that SBOM, so the scan covers exactly
+  # the recorded inventory. Every finding goes to code scanning; a Critical with a published fix fails
+  # the job, and the results job then withholds the image from Docker Hub. The job holds no secrets
+  # and its third-party actions are pinned to commit SHAs, so a compromised scanner release has
+  # neither a repointed tag to arrive through nor a credential to take.
+  sbom_scan:
+    name: SBOM and Vulnerability Scan
+    needs: server_image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/summit-42:sha-${{ github.sha }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: cyclonedx-json
+          output-file: summit-42.cdx.json
+          artifact-name: sbom-summit-42.cdx.json
+          upload-artifact-retention: 90
+
+      - name: Scan SBOM for known vulnerabilities
+        id: scan
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          sbom: summit-42.cdx.json
+          fail-build: false
+          # With fail-build off this sets only the annotation and SARIF result levels, so the run warns
+          # only on a Critical. Code scanning ranks the alerts by their security-severity instead.
+          severity-cutoff: critical
+          output-format: sarif
+
+      - name: Record findings in code scanning
+        if: ${{ !cancelled() && steps.scan.outputs.sarif != '' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+          category: image-summit-42
+
+      # A second pass because only-fixed also filters what is reported; the pass above records
+      # everything, this one gates on the findings a dependency upgrade can remediate.
+      - name: Fail on Critical vulnerabilities with an available fix
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          sbom: summit-42.cdx.json
+          fail-build: true
+          severity-cutoff: critical
+          only-fixed: true
+          output-format: table
+          output-file: fixable-summit-42.txt
+
+      - name: Summarize fixable vulnerabilities
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "### Fixable vulnerabilities in summit-42"
+            echo '```'
+            cat fixable-summit-42.txt 2>/dev/null || echo "No report produced"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Promotes the staged image and is the single required check for branch protection. Both live here
+  # so the promotion is the last thing the pipeline does and can gate on every job at once.
+  results:
+    name: Build Result
+    needs: [build, server_image, sbom_scan]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      # The ref guard keeps a workflow_dispatch run on some other branch from advancing the published
+      # tag to a build off that branch.
+      PROMOTE: ${{ (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && needs.build.result == 'success' && needs.server_image.result == 'success' && needs.sbom_scan.result == 'success' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Log in to GitHub Container Registry
+        if: ${{ env.PROMOTE == 'true' }}
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: ${{ env.PROMOTE == 'true' }}
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Promote validated image to Docker Hub
+        if: ${{ env.PROMOTE == 'true' }}
+        run: |
+          version=$(grep -E '^summit42Version=' gradle.properties | cut -d= -f2)
+          staged="ghcr.io/${{ github.repository_owner }}/summit-42:sha-${{ github.sha }}"
+          docker pull "$staged"
+          docker tag "$staged" "kinoticai/summit-42:${version}"
+          docker push "kinoticai/summit-42:${version}"
+
+      - name: Fail if any job failed
+        run: |
+          failed=false
+          check() {
+            case "$2" in
+              success) ;;
+              *) echo "::error::$1: $2" ; failed=true ;;
+            esac
+          }
+          check "Build" "${{ needs.build.result }}"
+          check "Server image" "${{ needs.server_image.result }}"
+          check "SBOM and vulnerability scan" "${{ needs.sbom_scan.result }}"
+          if [ "$failed" = true ]; then
+            exit 1
+          fi
+          echo "All jobs passed."
