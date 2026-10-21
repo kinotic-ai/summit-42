@@ -2,7 +2,6 @@ package org.kinotic.summit42.internal.api.services;
 
 import lombok.RequiredArgsConstructor;
 import org.kinotic.core.api.security.SecurityContext;
-import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
 import org.kinotic.summit42.api.config.Summit42Properties;
 import org.kinotic.summit42.internal.api.proxies.LlmConfigurationServiceProxy;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
@@ -36,18 +35,17 @@ public class ChatClientFactory {
     private volatile CachedClient cached;
 
     /**
-     * Reads the configuration and its API key as the participant, which the LLM configuration service requires to
-     * be an organization participant.
+     * Reads the configuration and its API key as this cluster member itself, since the LLM configuration service
+     * refuses a key to a call made for a participant.
      *
-     * @param participant the participant of the chat turn the client is for
      * @return a client for the configuration as it is now; one built earlier is reused while the configuration is
      * unchanged. Fails with {@link BuildUnavailableException} when there is no such configuration or it
      * holds no API key
      */
-    public CompletionStage<ChatClient> chatClient(OrganizationParticipant participant) {
+    public CompletionStage<ChatClient> chatClient() {
         String name = properties.getLlmConfigurationName();
-        // callAs binds the participant only to proxy calls its supplier starts, so each call gets its own
-        return securityContext.callAs(participant, () -> llmConfigurationService.findByName(name).toCompletionStage())
+        // callAsMember covers only proxy calls its supplier starts, so each call gets its own
+        return securityContext.callAsMember(() -> llmConfigurationService.findByName(name).toCompletionStage())
                 .thenCompose(configuration -> {
                     if (configuration == null) {
                         throw new BuildUnavailableException("No LLM configuration is named '" + name
@@ -58,8 +56,8 @@ public class ChatClientFactory {
                     if (current != null && current.matches(configuration)) {
                         ret = CompletableFuture.completedFuture(current.client());
                     } else {
-                        ret = securityContext.callAs(participant, () -> llmConfigurationService.findApiKey(configuration.getId())
-                                                                                               .toCompletionStage())
+                        ret = securityContext.callAsMember(() -> llmConfigurationService.findApiKey(configuration.getId())
+                                                                                        .toCompletionStage())
                                 .thenApply(apiKey -> {
                                     if (apiKey == null) {
                                         throw new BuildUnavailableException("The LLM configuration '" + name

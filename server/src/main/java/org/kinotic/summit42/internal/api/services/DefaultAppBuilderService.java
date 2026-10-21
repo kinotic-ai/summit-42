@@ -192,7 +192,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
         AtomicBoolean ended = new AtomicBoolean();
 
         Flux<BuildEvent> answer =
-                Mono.fromCompletionStage(() -> chatClientFactory.chatClient(participant))
+                Mono.fromCompletionStage(() -> chatClientFactory.chatClient())
                     .flatMapMany(client -> client.prompt()
                                                  .messages(prompt)
                                                  .tools(tools)

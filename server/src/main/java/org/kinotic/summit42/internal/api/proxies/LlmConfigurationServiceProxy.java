@@ -21,7 +21,7 @@ public interface LlmConfigurationServiceProxy {
     Future<LlmConfiguration> findByName(String name);
 
     /**
-     * Refuses a call not made as an organization participant.
+     * Refuses a call made for a participant, so Summit 42 reads the key as itself.
      *
      * @return the API key held for the configuration, or null when none is held
      */

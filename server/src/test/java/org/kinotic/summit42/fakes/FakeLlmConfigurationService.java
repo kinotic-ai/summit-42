@@ -2,8 +2,8 @@ package org.kinotic.summit42.fakes;
 
 import io.vertx.core.Future;
 import lombok.RequiredArgsConstructor;
+import org.kinotic.core.api.exceptions.AuthorizationException;
 import org.kinotic.core.api.security.SecurityContext;
-import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
 
 import java.util.Map;
@@ -11,8 +11,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Holds the platform's LLM configurations and their API keys in memory. Like the real service, it reads a key only
- * for a call made as an organization participant.
+ * Holds the platform's LLM configurations and their API keys in memory. Like the real service, it refuses a key to a
+ * call made for a participant.
  */
 @RequiredArgsConstructor
 public class FakeLlmConfigurationService implements PublishedLlmConfigurationService {
@@ -29,7 +29,9 @@ public class FakeLlmConfigurationService implements PublishedLlmConfigurationSer
 
     @Override
     public Future<String> findApiKey(String id) {
-        securityContext.requireParticipant(OrganizationParticipant.class);
+        if (securityContext.currentParticipant() != null) {
+            throw new AuthorizationException("Access denied");
+        }
         apiKeyReads.incrementAndGet();
         return Future.succeededFuture(apiKeys.get(id));
     }
