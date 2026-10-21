@@ -44,8 +44,8 @@ public class ChatClientFactory {
      */
     public CompletionStage<ChatClient> chatClient() {
         String name = properties.getLlmConfigurationName();
-        // callAsMember covers only proxy calls its supplier starts, so each call gets its own
-        return securityContext.callAsMember(() -> llmConfigurationService.findByName(name).toCompletionStage())
+        // callWithoutParticipant covers only proxy calls its supplier starts, so each call gets its own
+        return securityContext.callWithoutParticipant(() -> llmConfigurationService.findByName(name).toCompletionStage())
                 .thenCompose(configuration -> {
                     if (configuration == null) {
                         throw new BuildUnavailableException("No LLM configuration is named '" + name
@@ -56,8 +56,8 @@ public class ChatClientFactory {
                     if (current != null && current.matches(configuration)) {
                         ret = CompletableFuture.completedFuture(current.client());
                     } else {
-                        ret = securityContext.callAsMember(() -> llmConfigurationService.findApiKey(configuration.getId())
-                                                                                        .toCompletionStage())
+                        ret = securityContext.callWithoutParticipant(
+                                        () -> llmConfigurationService.findApiKey(configuration.getId()).toCompletionStage())
                                 .thenApply(apiKey -> {
                                     if (apiKey == null) {
                                         throw new BuildUnavailableException("The LLM configuration '" + name
