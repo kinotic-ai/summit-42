@@ -48,15 +48,24 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
    ```
 5. For UI work, run `bun run dev` in `frontend/` and open `http://localhost:5175`.
 
+`./gradlew :server:test` boots the server as the only member of a cluster of its own and calls `AppBuilderService` over Kinotic RPC, so it needs no Kinotic stack.
+
 The server builds against `org.kinotic:*:5.0.0-SNAPSHOT`, published to the Central Portal snapshots repository. Until a snapshot with Summit 42's Kinotic changes is published, publish your Kinotic checkout to Maven local and add `mavenLocal()` to the repositories.
 
 ## Deploy
 
 `./gradlew :server:bootBuildImage` builds `kinoticai/summit-42:<version>`. Build the UI first, because the jar serves `frontend/dist`.
 
+CI (`.github/workflows/build.yml`) builds and tests every push and pull request to `develop` or `main`, and a nightly run rebuilds against the latest Kinotic snapshot. It stages the image on ghcr.io and, once every job passes on `develop` or `main`, pushes it to Docker Hub as `kinoticai/summit-42:<version>`. The repository needs:
+
+| Setting | Kind | Value |
+|---|---|---|
+| `DOCKER_HUB_USERNAME`, `DOCKER_HUB_PASSWORD` | secrets | a Docker Hub account that can push `kinoticai/summit-42` |
+| `VITE_KINOTIC_HOST`, `VITE_KINOTIC_PORT`, `VITE_KINOTIC_USE_SSL` | variables | the management gateway the image's UI connects to, such as `dev-api.kinotic.ai`, `443` and `true`; unset, the UI connects to `localhost:58503` |
+
 Run the container beside the Kinotic servers, whose management server is configured as
 [Kinotic configuration](#kinotic-configuration) shows, with:
 
 - `KINOTIC_IGNITE_*` set so it joins their cluster;
 - port 8080 published as `https://dev-summit42.kinotic.ai` on the development server;
-- the UI built with `VITE_KINOTIC_HOST=dev-api.kinotic.ai`, `VITE_KINOTIC_PORT=443` and `VITE_KINOTIC_USE_SSL=true`.
+- the UI built with `VITE_KINOTIC_HOST=dev-api.kinotic.ai`, `VITE_KINOTIC_PORT=443` and `VITE_KINOTIC_USE_SSL=true`, as the CI variables above do.

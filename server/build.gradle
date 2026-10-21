@@ -67,16 +67,13 @@ dependencies {
     implementation 'org.apache.commons:commons-lang3'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.withType(JavaCompile).configureEach {
     // Kinotic's service schemas read method parameter names
     options.compilerArgs << '-parameters'
-}
-
-tasks.named('test') {
-    useJUnitPlatform()
 }
 
 // The UI is served from the jar's webroot; build it first with `bun run build` in frontend/
@@ -94,6 +91,21 @@ def addOpens = ['--add-opens=java.base/java.nio=ALL-UNNAMED',
 
 tasks.named('bootRun') {
     jvmArgs addOpens
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    // the tests boot the server as an Ignite cluster member
+    jvmArgs addOpens
+    // a test blocked on a stream that never ends fails instead of hanging the build; SEPARATE_THREAD lets the
+    // timeout preempt a test blocked in StepVerifier.verify() or a future's get()
+    systemProperty 'junit.jupiter.execution.timeout.default', '120 s'
+    systemProperty 'junit.jupiter.execution.timeout.thread.mode.default', 'SEPARATE_THREAD'
+    testLogging {
+        exceptionFormat = 'full'
+        showCauses = true
+        showStackTraces = true
+    }
 }
 
 tasks.named('bootBuildImage') {
