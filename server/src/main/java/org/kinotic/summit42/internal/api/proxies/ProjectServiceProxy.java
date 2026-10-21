@@ -26,6 +26,8 @@ public interface ProjectServiceProxy {
      */
     Future<Project> createSync(Project project);
 
+    Future<Page<Project>> findAll(Pageable pageable);
+
     Future<Page<Project>> findAllForApplication(String applicationId, Pageable pageable);
 
     /**

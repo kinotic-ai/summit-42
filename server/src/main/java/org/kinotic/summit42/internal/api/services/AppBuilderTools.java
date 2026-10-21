@@ -4,23 +4,15 @@ import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.ext.web.client.WebClient;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.Validate;
-import org.kinotic.core.api.crud.Page;
-import org.kinotic.core.api.crud.Pageable;
 import org.kinotic.core.api.security.SecurityContext;
-import org.kinotic.domain.api.model.Application;
 import org.kinotic.domain.api.model.ReconcileState;
-import org.kinotic.management.api.model.Project;
 import org.kinotic.management.api.model.ProjectRepoToken;
-import org.kinotic.management.api.model.ProjectType;
-import org.kinotic.management.api.model.RepositoryConnectionStatus;
 import org.kinotic.management.api.model.deployment.DeploymentState;
 import org.kinotic.management.api.model.deployment.DeploymentStatusType;
 import org.kinotic.management.api.model.deployment.ProjectDeployment;
 import org.kinotic.management.api.model.deployment.UiDeployment;
 import org.kinotic.summit42.api.model.BuildEvent;
-import org.kinotic.summit42.internal.api.proxies.ApplicationServiceProxy;
 import org.kinotic.summit42.internal.api.proxies.ProjectRepoCredentialServiceProxy;
 import org.kinotic.summit42.internal.api.proxies.ProjectServiceProxy;
 import org.kinotic.summit42.internal.api.proxies.UiDeploymentServiceProxy;
@@ -44,10 +36,10 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * The tools Claude builds an organization's app with. Each acts for the turn's signed-in user, so Kinotic authorizes
- * every call against their organization, and reports what it does as {@link BuildEvent#progress(String)} events.
+ * The tools Claude builds the turn's app with. Each works on the project of the {@link BuilderTurn} and acts for its
+ * signed-in user, so Kinotic authorizes every call against their organization, and reports what it does as
+ * {@link BuildEvent#progress(String)} events.
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class AppBuilderTools {
@@ -57,9 +49,6 @@ public class AppBuilderTools {
      */
     public static final String TURN = "turn";
 
-    // every organization's app is a project of the application this name slugifies to, so it is found again after a restart
-    private static final String APPLICATION_NAME = "Summit 42";
-    private static final String APPLICATION_DESCRIPTION = "The apps Summit 42 builds";
     private static final Duration CALL_TIMEOUT = Duration.ofMinutes(2);
     private static final Duration DEPLOYMENT_TIMEOUT = Duration.ofMinutes(15);
     private static final Duration DEPLOYMENT_POLL_INTERVAL = Duration.ofSeconds(5);
@@ -93,45 +82,11 @@ public class AppBuilderTools {
 
     private final Vertx vertx;
     private final SecurityContext securityContext;
-    private final ApplicationServiceProxy applicationService;
     private final ProjectServiceProxy projectService;
     private final UiDeploymentServiceProxy uiDeploymentService;
     private final ProjectRepoCredentialServiceProxy repoCredentialService;
     private final GitHubRepoClient gitHubRepoClient;
     private final WebClient webClient;
-
-    @Tool(description = """
-            Creates the user's app: a Kinotic application with one project, whose GitHub repository is generated from \
-            Kinotic's app template. Call it once, before any other tool, when the user asks for an app and none exists; \
-            when the app already exists it returns the existing one. Returns the repository's files.""")
-    public String createApp(@ToolParam(description = "A short name for the app, such as 'Todo'") String name,
-                            @ToolParam(description = "One sentence on what the app is for") String description,
-                            ToolContext toolContext) {
-        return act(toolContext, turn -> {
-            BuilderSession session = turn.getSession();
-            String ret;
-            if (session.getProjectId() != null) {
-                ret = "The app already exists.\n" + describeFiles(turn);
-            } else {
-                Validate.notBlank(name, "name is required");
-                turn.getEvents().accept(BuildEvent.progress("Creating the app"));
-                Application application = callAs(turn, () -> applicationService
-                        .createApplicationIfNotExist(APPLICATION_NAME, APPLICATION_DESCRIPTION, null)
-                        .toCompletionStage());
-                Project project = initialized(turn, findOrCreateProject(turn, application, name, description));
-                if (project.getRepoConnectionStatus() != RepositoryConnectionStatus.CONNECTED) {
-                    ret = "The app's GitHub repository cannot be used: Kinotic reports it "
-                          + Objects.toString(project.getRepoConnectionStatus(), "missing")
-                          + ". Ask the user to check the GitHub connection of their Kinotic organization.";
-                } else {
-                    session.setProjectId(project.getId());
-                    log.info("Organization {} builds in project {}", session.getOrganizationId(), project.getId());
-                    ret = "The app is '" + project.getName() + "'.\n" + describeFiles(turn);
-                }
-            }
-            return ret;
-        });
-    }
 
     @Tool(description = "Lists the path of every file in the app's repository on its default branch.")
     public String listFiles(ToolContext toolContext) {
@@ -224,40 +179,9 @@ public class AppBuilderTools {
         return ret;
     }
 
-    private Project findOrCreateProject(BuilderTurn turn, Application application, String name, String description) {
-        Page<Project> page = callAs(turn, () -> projectService.findAllForApplication(application.getId(), Pageable.ofSize(1))
-                                                              .toCompletionStage());
-        Project ret;
-        if (page.getContent().isEmpty()) {
-            Project project = new Project();
-            project.setName(name);
-            project.setDescription(description);
-            project.setOrganizationId(turn.getParticipant().getOrganizationId());
-            project.setApplicationId(application.getId());
-            project.setSourceOfTruth(ProjectType.TYPESCRIPT);
-            project.setRepoPrivate(true);
-            ret = callAs(turn, () -> projectService.createSync(project).toCompletionStage());
-        } else {
-            ret = page.getContent().getFirst();
-        }
-        return ret;
-    }
-
-    // a repository whose template rendering failed is rendered again once; a second failure fails the tool call
-    private Project initialized(BuilderTurn turn, Project project) {
-        Project ret;
-        if (project.getRepoConnectionStatus() == RepositoryConnectionStatus.INITIALIZATION_FAILED) {
-            turn.getEvents().accept(BuildEvent.progress("Preparing the app's repository again"));
-            ret = callAs(turn, () -> projectService.retryRepoInitialization(project.getId()).toCompletionStage());
-        } else {
-            ret = project;
-        }
-        return ret;
-    }
-
     // the project's deployment once it has finished deploying the commit, or null when it has not by the deadline
     private ProjectDeployment awaitDeployment(BuilderTurn turn, String commitSha, long deadline) {
-        String projectId = turn.getSession().getProjectId();
+        String projectId = turn.getProjectId();
         DeploymentStatusType reported = null;
         ProjectDeployment ret = null;
         while (ret == null && System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
@@ -303,9 +227,6 @@ public class AppBuilderTools {
             }
         }
         if (appUrl != null) {
-            synchronized (turn.getSession()) {
-                turn.getSession().getConversation().setAppUrl(appUrl);
-            }
             turn.getEvents().accept(BuildEvent.appReady(appUrl));
         }
         return "The deployment is running commit " + commitSha + ".\n"
@@ -314,7 +235,7 @@ public class AppBuilderTools {
 
     // the UI deployments the commit publishes; one the commit dropped is meant to be ORPHANED instead
     private List<UiDeployment> commitUis(BuilderTurn turn, String commitSha) {
-        String projectId = turn.getSession().getProjectId();
+        String projectId = turn.getProjectId();
         DeploymentState intent = new DeploymentState(DeploymentStatusType.READY, commitSha);
         return callAs(turn, () -> uiDeploymentService.findAllForProject(projectId).toCompletionStage())
                 .stream()
@@ -338,11 +259,9 @@ public class AppBuilderTools {
 
     private ProjectRepoToken repoToken(BuilderTurn turn) {
         BuilderSession session = turn.getSession();
-        String projectId = session.getProjectId();
-        Validate.validState(projectId != null, "The app does not exist yet; call createApp first");
         ProjectRepoToken ret = session.getRepoToken();
         if (ret == null || Instant.now().plus(TOKEN_RENEWAL_MARGIN).isAfter(ret.getExpiresAt())) {
-            ret = callAs(turn, () -> repoCredentialService.issueWriteToken(projectId).toCompletionStage());
+            ret = callAs(turn, () -> repoCredentialService.issueWriteToken(turn.getProjectId()).toCompletionStage());
             session.setRepoToken(ret);
         }
         return ret;
@@ -369,7 +288,7 @@ public class AppBuilderTools {
 
     // tools run on Spring AI's boundedElastic workers, so blocking on a future is allowed here. A cancelled turn
     // interrupts its tool's thread, yet the tool runs to its end, each call waited for up to CALL_TIMEOUT, so a
-    // commit or create it started is recorded before the turn is released; the restored interrupt stops the
+    // commit it started is recorded before the turn is released; the restored interrupt stops the
     // deployment polling
     private static <T> T get(CompletableFuture<T> future) {
         long deadline = System.nanoTime() + CALL_TIMEOUT.toNanos();

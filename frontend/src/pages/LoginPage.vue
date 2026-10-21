@@ -18,7 +18,7 @@
     <template v-if="workspace">
       <ProviderButton v-for="provider in workspaceProviders"
                       :key="provider.id"
-                      :action="workspaceLoginUrl(workspace, provider.id)"
+                      :action="workspaceLoginUrl(workspace, provider.id, referer)"
                       :provider="provider.provider"
                       :label="provider.name || providerDisplayName(provider.provider)"
                       verb="Continue" />
@@ -47,7 +47,7 @@
     <template v-else>
       <ProviderButton v-for="provider in socialProviders"
                       :key="provider"
-                      :action="socialLoginUrl(provider)"
+                      :action="socialLoginUrl(provider, referer)"
                       :provider="provider"
                       :label="providerDisplayName(provider)"
                       verb="Continue" />
@@ -76,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/components/AuthShell.vue'
 import ProviderButton from '@/components/ProviderButton.vue'
@@ -108,20 +108,29 @@ const password = ref('')
 const signingIn = ref(false)
 const error = ref<string | null>(null)
 
+// the page the router guard sent the visitor here from, where a sign-in returns to; only a path within this UI
+const referer = computed(() => {
+  const value = route.query.referer
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\')
+    ? value
+    : null
+})
+
 onMounted(async () => {
   if (SESSION.connected) {
-    await router.replace('/')
+    await router.replace(referer.value ?? '/')
     return
   }
   await consumeError()
   await loadProviders()
 })
 
-// the gateway's redirects land here with ?error=<code>; the query is cleared so a refresh does not repeat it
+// the gateway's redirects land here with ?error=<code>; the error is cleared so a refresh does not repeat it, and the
+// referer is kept for the sign-in started next
 async function consumeError() {
   const code = typeof route.query.error === 'string' ? route.query.error : null
   if (code) {
-    await router.replace({ query: {} })
+    await router.replace({ query: referer.value ? { referer: referer.value } : {} })
     if (code === 'multiple_organizations') {
       try {
         choices.value = await fetchWorkspaceChoices()
@@ -192,7 +201,7 @@ async function signIn() {
     await loginWithPassword(workspace.value, email.value.trim(), password.value)
     rememberWorkspace(workspace.value)
     if (await connect()) {
-      await router.replace('/')
+      await router.replace(referer.value ?? '/')
     } else {
       error.value = 'You were signed in, but this browser did not keep the session. Allow cookies for the Summit 42 server and try again.'
     }
