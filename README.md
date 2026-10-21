@@ -8,7 +8,7 @@ deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, 
 
 | Path | What it is |
 |---|---|
-| `server/` | A Spring Boot member of the Kinotic cluster. It hosts `AppBuilderService` in the `summit-42` zone and serves the UI on port 8080. |
+| `server/` | A Spring Boot member of the Kinotic cluster. It hosts `AppBuilderService` in Kinotic's `management-api` zone and serves the UI on port 8080. |
 | `frontend/` | The Vue UI. It signs in to the Kinotic management gateway and chats with `AppBuilderService` over that gateway's STOMP connection. See [frontend/README.md](frontend/README.md). |
 
 ## How it works
@@ -26,11 +26,10 @@ deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, 
 
 ## Kinotic configuration
 
-Kinotic knows nothing about Summit 42, so the management server it signs users in through needs two settings:
+Kinotic knows nothing about Summit 42, so the management server it signs users in through needs one setting:
 
 | Property | Environment variable | Value |
 |---|---|---|
-| `kinotic.apiGateway.organizationServiceZones` | `KINOTIC_APIGATEWAY_ORGANIZATIONSERVICEZONES` | `summit-42`, so organizations' users may call `AppBuilderService` and the management server routes to it |
 | `kinotic.domain.cors.allowedOriginPattern` | `KINOTIC_DOMAIN_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; sign-up emails, social sign-ups and the GitHub install return to that origin |
 
 ## Run locally

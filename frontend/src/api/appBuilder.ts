@@ -35,7 +35,7 @@ export interface Conversation {
     messages: ChatMessage[]
 }
 
-const SERVICE_IDENTIFIER = 'summit-42~org.kinotic.summit42.api.services.AppBuilderService'
+const SERVICE_IDENTIFIER = 'management-api~org.kinotic.summit42.api.services.AppBuilderService'
 
 /** The Summit 42 app builder the signed-in workspace creates its apps with and chats with about each one. */
 export class AppBuilderService {

@@ -18,13 +18,6 @@ import java.util.List;
 public interface AppBuilderService {
 
     /**
-     * The zone Summit 42's services are published in, which the Kinotic servers list in
-     * {@code kinotic.apiGateway.organizationServiceZones} so organizations' users reach them through the
-     * management server.
-     */
-    String ZONE = "summit-42";
-
-    /**
      * @return the organization's apps, ordered by name
      */
     Future<List<BuilderApp>> findApps();

@@ -2,7 +2,7 @@
 
 The chat-only UI of Summit 42: people sign up, create and name their apps, describe each one in a chat, and the
 Summit 42 server builds and deploys it as a Kinotic app. A Vue 3 + Vite + TypeScript SPA that signs in to the Kinotic management gateway and
-talks to the `summit-42` zone's `AppBuilderService` over Kinotic's STOMP connection (`@kinotic-ai/core`).
+talks to `AppBuilderService`, in Kinotic's `management-api` zone, over Kinotic's STOMP connection (`@kinotic-ai/core`).
 
 ## Run against a local Kinotic
 
@@ -13,7 +13,7 @@ bun install
 bun run dev          # http://localhost:5175
 ```
 
-The management server must admit `http://localhost:5175` in its CORS pattern and list the `summit-42` zone, as the
+The management server must admit `http://localhost:5175` in its CORS pattern, as the
 root [README](../README.md#kinotic-configuration) shows. With the email service disabled locally, the sign-up
 verification link is printed in the management server's log.
 
