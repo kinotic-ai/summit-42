@@ -6,17 +6,18 @@ import org.kinotic.core.api.crud.Pageable;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.domain.api.model.Application;
 
-import java.util.Comparator;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Holds each organization's applications in memory, ordered by id.
+ * Holds each organization's applications in memory, answering them in the order they were added.
  */
 public class FakeApplicationService extends FakeOrganizationService implements PublishedApplicationService {
 
-    // organization id -> application id -> application
+    // organization id -> application id -> application, in the order added
     private final Map<String, Map<String, Application>> applications = new ConcurrentHashMap<>();
 
     public FakeApplicationService(SecurityContext securityContext) {
@@ -38,10 +39,12 @@ public class FakeApplicationService extends FakeOrganizationService implements P
 
     @Override
     public Future<Page<Application>> findAll(Pageable pageable) {
-        List<Application> sorted = applicationsOf(organizationId()).values().stream()
-                                                                   .sorted(Comparator.comparing(Application::getId))
-                                                                   .toList();
-        return Future.succeededFuture(page(sorted, pageable));
+        Map<String, Application> found = applicationsOf(organizationId());
+        List<Application> all;
+        synchronized (found) {
+            all = List.copyOf(found.values());
+        }
+        return Future.succeededFuture(page(all, pageable));
     }
 
     @Override
@@ -63,7 +66,7 @@ public class FakeApplicationService extends FakeOrganizationService implements P
      * @return the organization's applications by id
      */
     public Map<String, Application> applicationsOf(String organizationId) {
-        return applications.computeIfAbsent(organizationId, key -> new ConcurrentHashMap<>());
+        return applications.computeIfAbsent(organizationId, key -> Collections.synchronizedMap(new LinkedHashMap<>()));
     }
 
     // the id the management server slugifies an application's name to

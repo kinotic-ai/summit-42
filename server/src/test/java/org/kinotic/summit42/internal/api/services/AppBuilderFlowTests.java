@@ -75,20 +75,23 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
 
     @Test
     public void testFindAppsListsTheAppsWithAProjectByNameWithTheUrlOfTheirServingUi() throws Exception {
+        // added out of order, so the order findApps answers in is its own
         Application zeta = applicationService.add(organizationId(), "Zeta", "The last app");
-        Application alpha = applicationService.add(organizationId(), "alpha", null);
+        Application beta = applicationService.add(organizationId(), "beta", null);
+        Application alpha = applicationService.add(organizationId(), "Alpha", null);
         applicationService.add(organizationId(), "No Project", null);
         projectService.add(organizationId(), zeta.getId(), RepositoryConnectionStatus.CONNECTED);
+        projectService.add(organizationId(), beta.getId(), RepositoryConnectionStatus.CONNECTED);
         projectService.add(organizationId(), alpha.getId(), RepositoryConnectionStatus.CONNECTED);
         uiDeploymentService.add(ui(zeta.getId(), null, "admin", null, "https://admin.zeta.example"));
         uiDeploymentService.add(ui(zeta.getId(), null, "web", COMMIT, "https://zeta.example"));
 
         List<BuilderApp> apps = await(callAs(participant, service -> service.findApps()));
 
-        Assertions.assertEquals(List.of("alpha", "Zeta"), apps.stream().map(BuilderApp::getName).toList());
+        Assertions.assertEquals(List.of("Alpha", "beta", "Zeta"), apps.stream().map(BuilderApp::getName).toList());
         Assertions.assertNull(apps.get(0).getUrl());
-        Assertions.assertEquals("The last app", apps.get(1).getDescription());
-        Assertions.assertEquals("https://zeta.example", apps.get(1).getUrl());
+        Assertions.assertEquals("The last app", apps.get(2).getDescription());
+        Assertions.assertEquals("https://zeta.example", apps.get(2).getUrl());
     }
 
     @Test
@@ -107,12 +110,17 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     public void testCreateAppCreatesTheApplicationAndItsProject() throws Exception {
         BuilderApp app = await(callAs(participant, service -> service.createApp("  Todo List ", "  ")));
 
-        Assertions.assertEquals("todo-list", app.getApplicationId());
+        Application application = applicationService.applicationsOf(organizationId()).values().iterator().next();
+        Assertions.assertEquals("Todo List", application.getName());
+        Assertions.assertNull(application.getDescription());
+        Assertions.assertEquals(organizationId(), application.getOrganizationId());
+        // the app is the application the application service created, under the id it assigned
+        Assertions.assertEquals(application.getId(), app.getApplicationId());
         Assertions.assertEquals("Todo List", app.getName());
         Assertions.assertNull(app.getDescription());
         Assertions.assertNull(app.getUrl());
         Project project = projectService.projectsOf(organizationId()).getFirst();
-        Assertions.assertEquals("todo-list", project.getApplicationId());
+        Assertions.assertEquals(application.getId(), project.getApplicationId());
         Assertions.assertEquals("Todo List", project.getName());
         Assertions.assertEquals(organizationId(), project.getOrganizationId());
         Assertions.assertEquals(ProjectType.TYPESCRIPT, project.getSourceOfTruth());
@@ -136,7 +144,7 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
 
         BuilderApp app = await(callAs(participant, service -> service.createApp("Todo", null)));
 
-        Assertions.assertEquals("todo", app.getApplicationId());
+        Assertions.assertEquals("Todo", app.getName());
         Assertions.assertEquals(RepositoryConnectionStatus.CONNECTED,
                                 projectService.projectsOf(organizationId()).getFirst().getRepoConnectionStatus());
     }
@@ -252,15 +260,20 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     @Test
     public void testChatReusesTheLlmClientUntilTheConfigurationChanges() {
         projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
-        llmConfigurationService.save(llmConfiguration(new Date()), "test-key");
         anthropic.replyWithText("One");
         anthropic.replyWithText("Two");
-        int readsBefore = llmConfigurationService.apiKeyReads();
+        anthropic.replyWithText("Three");
 
+        // a client for the configuration as setUp saved it, whether built now or by an earlier test
         chat("todo", "First");
+        int readsBeforeChange = llmConfigurationService.apiKeyReads();
         chat("todo", "Second");
+        int readsUnchanged = llmConfigurationService.apiKeyReads();
+        llmConfigurationService.save(llmConfiguration(new Date()), "test-key");
+        chat("todo", "Third");
 
-        Assertions.assertEquals(readsBefore + 1, llmConfigurationService.apiKeyReads());
+        Assertions.assertEquals(readsBeforeChange, readsUnchanged);
+        Assertions.assertEquals(readsBeforeChange + 1, llmConfigurationService.apiKeyReads());
     }
 
     @Test
