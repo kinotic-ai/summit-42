@@ -48,7 +48,7 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
    ```
 5. For UI work, run `bun run dev` in `frontend/` and open `http://localhost:5175`.
 
-`./gradlew :server:test` boots the server as the only member of a cluster of its own and calls `AppBuilderService` over Kinotic RPC, so it needs no Kinotic stack.
+`./gradlew :server:test` boots the server as the only member of a cluster of its own and calls `AppBuilderService` over Kinotic RPC, so it needs no Kinotic stack. Some tests run with no Kinotic services at all. Others use fakes of the Kinotic services Summit 42 calls, which run on the server's own node, and a local fake of Anthropic's API that the LLM configuration points at.
 
 The server builds against `org.kinotic:*:5.0.0-SNAPSHOT`, published to the Central Portal snapshots repository. Until a snapshot with Summit 42's Kinotic changes is published, publish your Kinotic checkout to Maven local and add `mavenLocal()` to the repositories.
 

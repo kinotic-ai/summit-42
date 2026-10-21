@@ -8,16 +8,19 @@ import org.kinotic.summit42.internal.api.repositories.BuilderSession;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.Map;
 
 /**
  * Calls the app builder's tools the way Spring AI calls them during a chat turn, for the outcomes they reach before
- * calling Kinotic, GitHub or Kinotic's documentation.
+ * calling Kinotic, GitHub or Kinotic's documentation. The context is closed after the class, since the JVM runs one
+ * Ignite node at a time.
  */
 @SpringBootTest
 @ActiveProfiles({"test"})
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public class AppBuilderToolsTests {
 
     @Autowired

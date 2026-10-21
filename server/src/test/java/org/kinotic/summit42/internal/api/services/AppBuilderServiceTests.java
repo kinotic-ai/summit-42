@@ -1,17 +1,13 @@
 package org.kinotic.summit42.internal.api.services;
 
-import io.vertx.core.Future;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.kinotic.core.api.exceptions.AuthorizationException;
 import org.kinotic.core.api.exceptions.RpcMissingServiceException;
 import org.kinotic.core.api.security.Participant;
-import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.domain.api.model.ApplicationKey;
-import org.kinotic.domain.api.model.security.participant.DefaultOrganizationParticipant;
 import org.kinotic.domain.api.model.security.participant.DefaultSystemParticipant;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
-import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.BuildEventType;
 import org.kinotic.summit42.api.model.ChatMessage;
 import org.kinotic.summit42.api.model.ChatRole;
@@ -20,39 +16,22 @@ import org.kinotic.summit42.internal.api.proxies.AppBuilderServiceProxy;
 import org.kinotic.summit42.internal.api.repositories.BuilderSession;
 import org.kinotic.summit42.internal.api.repositories.BuilderSessionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 
 /**
- * Boots Summit 42 as a member of a cluster of its own and calls its {@code AppBuilderService} over Kinotic RPC,
- * sending each call as the participant the management gateway would deliver. The cluster runs none of the Kinotic
- * services Summit 42 calls, as when the management and system servers cannot be reached, so these tests cover what
- * the service does without them; a conversation a test needs is placed in {@link BuilderSessionRepository}, since a
- * chat turn that would record one needs the app's project and the platform's LLM.
+ * Covers what {@code AppBuilderService} does when the Kinotic services it calls cannot be reached: the cluster runs
+ * none of them, as when the management and system servers are down. A conversation a test needs is placed in
+ * {@link BuilderSessionRepository}, since a chat turn that would record one needs the app's project and the
+ * platform's LLM.
  */
-@SpringBootTest
-@ActiveProfiles({"test"})
-public class AppBuilderServiceTests {
+public class AppBuilderServiceTests extends AppBuilderServiceTestBase {
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(30);
-
-    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection") // Kinotic wires the proxy
-    @Autowired
-    private AppBuilderServiceProxy appBuilderService;
-    @Autowired
-    private SecurityContext securityContext;
     @Autowired
     private BuilderSessionRepository sessionRepository;
 
@@ -189,17 +168,6 @@ public class AppBuilderServiceTests {
         Assertions.assertEquals(2, conversation.getMessages().size());
     }
 
-    // a participant of an organization of its own, so no test sees another's conversations
-    private static OrganizationParticipant newOrganizationParticipant() {
-        String organizationId = "org-" + UUID.randomUUID();
-        return DefaultOrganizationParticipant.builder()
-                                             .id("user@" + organizationId)
-                                             .organizationId(organizationId)
-                                             .metadata(Map.of())
-                                             .roles(List.of())
-                                             .build();
-    }
-
     // the app's session with one exchange in its conversation
     private BuilderSession sessionOf(OrganizationParticipant participant, String applicationId) {
         BuilderSession ret = sessionRepository.findOrCreate(new ApplicationKey(participant.getOrganizationId(),
@@ -207,23 +175,6 @@ public class AppBuilderServiceTests {
         ret.getConversation().getMessages().add(new ChatMessage(ChatRole.USER, "Build a todo app"));
         ret.getConversation().getMessages().add(new ChatMessage(ChatRole.ASSISTANT, "Your todo app is ready"));
         return ret;
-    }
-
-    // the proxy sends a call as the participant bound to the context it is invoked on
-    private <T> CompletableFuture<T> callAs(Participant participant, Function<AppBuilderServiceProxy, Future<T>> call) {
-        return securityContext.callAs(participant, () -> call.apply(appBuilderService).toCompletionStage());
-    }
-
-    // the stream's request carries the participant bound when chat is invoked, and is sent on subscription
-    private Flux<BuildEvent> chatAs(Participant participant, String applicationId, String message) {
-        return Mono.fromCompletionStage(securityContext.callAs(participant,
-                                                               () -> CompletableFuture.completedFuture(
-                                                                       appBuilderService.chat(applicationId, message))))
-                   .flatMapMany(Function.identity());
-    }
-
-    private static <T> T await(CompletableFuture<T> future) throws Exception {
-        return future.get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
     }
 
     private static void assertRefused(CompletableFuture<?> future) {
