@@ -12,6 +12,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Calls the app builder's tools the way Spring AI calls them during a chat turn, for the outcomes they reach before
@@ -58,7 +59,8 @@ public class AppBuilderToolsTests {
 
     private static BuilderTurn newTurn() {
         BuilderSession session = new BuilderSession(new ApplicationKey("org", "app")).setTurnRunning(true);
-        return new BuilderTurn(new DefaultOrganizationParticipant("user", "org", null, null), session, "project", event -> {});
+        return new BuilderTurn(new DefaultOrganizationParticipant("user", "org", null, null), session, "project",
+                               new SkillSet("commit", new TreeMap<>()), event -> {});
     }
 
     private static ToolContext contextOf(BuilderTurn turn) {

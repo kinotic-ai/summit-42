@@ -11,6 +11,7 @@ import org.kinotic.core.api.crud.Pageable;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.domain.api.model.Application;
 import org.kinotic.domain.api.model.ApplicationKey;
+import org.kinotic.domain.api.model.TenantManagement;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
 import org.kinotic.management.api.model.Project;
 import org.kinotic.management.api.model.ProjectType;
@@ -78,6 +79,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
     private final BuilderSessionRepository sessionRepository;
     private final ChatClientFactory chatClientFactory;
     private final AppBuilderTools tools;
+    private final KinoticSkills kinoticSkills;
     private final SystemMessage systemMessage = new SystemMessage(loadSystemPrompt());
 
     @Override
@@ -105,8 +107,10 @@ public class DefaultAppBuilderService implements AppBuilderService {
     public Future<BuilderApp> createApp(String name, String description) {
         OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
         Validate.notBlank(name, "Name the app");
+        // the platform gives each of the app's users a tenant, so an entity can keep its rows private to each user
         Application application = new Application(name.strip(), StringUtils.trimToNull(description))
-                .setOrganizationId(participant.getOrganizationId());
+                .setOrganizationId(participant.getOrganizationId())
+                .setTenantManagement(TenantManagement.PLATFORM);
         return callAs(participant, () -> applicationService.createSync(application))
                 .compose(created -> createProject(participant, created)
                         .compose(project -> buildable(participant, project))
@@ -123,10 +127,12 @@ public class DefaultAppBuilderService implements AppBuilderService {
         } else {
             // the turn takes the session when the stream is subscribed, so a stream never subscribed holds nothing
             ret = Mono.fromCompletionStage(() -> findBuildableProject(participant, applicationId).toCompletionStage())
-                      .flatMapMany(project -> startTurn(participant,
-                                                        sessionRepository.findOrCreate(applicationKey),
-                                                        project,
-                                                        message))
+                      .zipWhen(project -> Mono.fromCompletionStage(() -> kinoticSkills.current().toCompletionStage()))
+                      .flatMapMany(found -> startTurn(participant,
+                                                      sessionRepository.findOrCreate(applicationKey),
+                                                      found.getT1(),
+                                                      found.getT2(),
+                                                      message))
                       .onErrorResume(e -> failure(applicationKey, e));
         }
         return ret;
@@ -164,12 +170,12 @@ public class DefaultAppBuilderService implements AppBuilderService {
     }
 
     private Flux<BuildEvent> startTurn(OrganizationParticipant participant, BuilderSession session, Project project,
-                                       String message) {
+                                       SkillSet skills, String message) {
         List<Message> prompt = null;
         synchronized (session) {
             if (!session.isTurnRunning()) {
                 session.setTurnRunning(true);
-                prompt = promptFor(session, project, message);
+                prompt = promptFor(session, project, skills, message);
                 session.getConversation().getMessages().add(new ChatMessage(ChatRole.USER, message));
             }
         }
@@ -177,15 +183,15 @@ public class DefaultAppBuilderService implements AppBuilderService {
         if (prompt == null) {
             ret = Flux.just(BuildEvent.error(TURN_RUNNING));
         } else {
-            ret = runTurn(participant, session, project.getId(), prompt);
+            ret = runTurn(participant, session, project.getId(), skills, prompt);
         }
         return ret;
     }
 
     private Flux<BuildEvent> runTurn(OrganizationParticipant participant, BuilderSession session, String projectId,
-                                     List<Message> prompt) {
+                                     SkillSet skills, List<Message> prompt) {
         Sinks.Many<BuildEvent> progress = Sinks.many().unicast().onBackpressureBuffer();
-        BuilderTurn turn = new BuilderTurn(participant, session, projectId,
+        BuilderTurn turn = new BuilderTurn(participant, session, projectId, skills,
                                            event -> progress.emitNext(event, RETRY_CONCURRENT_EMIT));
         // appended on the model's stream and read by a cancel on another thread
         StringBuffer reply = new StringBuffer();
@@ -325,9 +331,9 @@ public class DefaultAppBuilderService implements AppBuilderService {
         return Flux.just(BuildEvent.error(text));
     }
 
-    // the system prompt, what the app is, the most recent messages of the conversation, and the new message; tool calls
-    // of earlier turns are not kept, so Claude reads the repository again when it needs to
-    private List<Message> promptFor(BuilderSession session, Project project, String message) {
+    // the system prompt, the skills Claude can read, what the app is, the most recent messages of the conversation, and
+    // the new message; tool calls of earlier turns are not kept, so Claude reads the repository again when it needs to
+    private List<Message> promptFor(BuilderSession session, Project project, SkillSet skills, String message) {
         List<ChatMessage> messages = session.getConversation().getMessages();
         int from = Math.max(0, messages.size() - MAX_HISTORY_MESSAGES);
         // a window that cuts an exchange in two drops the reply whose message it cut off
@@ -336,6 +342,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
         }
         List<Message> ret = new ArrayList<>();
         ret.add(systemMessage);
+        ret.add(new SystemMessage("The Kinotic skills readSkill reads:\n" + skills.catalog()));
         // the project carries the name and description the user gave the app
         ret.add(new SystemMessage("The user named this app '" + project.getName() + "'"
                                   + (project.getDescription() != null ? " and described it as: " + project.getDescription() : "")

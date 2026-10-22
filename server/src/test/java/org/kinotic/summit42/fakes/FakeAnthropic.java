@@ -65,13 +65,20 @@ public class FakeAnthropic implements AutoCloseable {
      * Queues a reply that calls the tool with no arguments.
      */
     public void replyWithToolCall(String toolName) {
+        replyWithToolCall(toolName, new JsonObject());
+    }
+
+    /**
+     * Queues a reply that calls the tool with the arguments given.
+     */
+    public void replyWithToolCall(String toolName, JsonObject input) {
         replies.add(request -> stream(request,
                                       List.of(blockStart(new JsonObject().put("type", "tool_use")
                                                                          .put("id", "toolu_" + requests.size())
                                                                          .put("name", toolName)
                                                                          .put("input", new JsonObject())),
                                               delta(new JsonObject().put("type", "input_json_delta")
-                                                                    .put("partial_json", "{}"))),
+                                                                    .put("partial_json", input.encode()))),
                                       "tool_use"));
     }
 

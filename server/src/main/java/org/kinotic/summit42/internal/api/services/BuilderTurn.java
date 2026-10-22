@@ -36,6 +36,11 @@ public class BuilderTurn {
     private final String projectId;
 
     /**
+     * The revision of Kinotic's skills the turn reads, which stays the same for the whole turn.
+     */
+    private final SkillSet skills;
+
+    /**
      * Receives the progress events the turn streams.
      */
     private final Consumer<BuildEvent> events;
