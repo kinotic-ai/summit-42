@@ -7,7 +7,7 @@ import org.kinotic.domain.api.model.EmailTemplate;
 import org.kinotic.domain.api.model.security.OrganizationMember;
 import org.kinotic.domain.api.model.security.PendingInvite;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
-import org.kinotic.domain.api.services.security.MemberInvitationService;
+import org.kinotic.management.api.services.security.MemberInvitationService;
 
 import java.util.Date;
 import java.util.List;

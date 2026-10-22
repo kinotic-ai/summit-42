@@ -3,8 +3,8 @@ package org.kinotic.summit42.internal.api.services;
 import io.vertx.core.Future;
 import lombok.RequiredArgsConstructor;
 import org.kinotic.domain.api.model.security.OrganizationMember;
-import org.kinotic.domain.api.services.security.MemberInvitationService;
 import org.kinotic.management.api.model.PendingInviteSummary;
+import org.kinotic.management.api.services.security.MemberInvitationService;
 import org.kinotic.summit42.api.services.InvitationService;
 import org.springframework.stereotype.Component;
 
