@@ -188,6 +188,57 @@ export async function completeSocialSignUp(token: string, orgName: string): Prom
     await postJson('/api/auth/org/signup/social/complete', { token, orgName, orgDescription: null }, 'Could not create your workspace')
 }
 
+/** An invitation as GET /api/auth/invite/details describes it to the invitee. */
+export interface InviteDetails {
+    email: string
+    displayName: string | null
+    organizationName: string | null
+    /** Set for an invitation into one of the workspace's apps, null for one into the workspace. */
+    applicationId: string | null
+    invitedByName: string | null
+    expiresAt: string
+    /** Whether the invited email already has an account someone signs in as. */
+    organizationUserExists: boolean
+    /** Whether that account has a password, which accepting with a password must then match. */
+    organizationUserHasPassword: boolean
+    /** The sign-in methods the invitation can be accepted through. */
+    providers: LoginProvider[]
+}
+
+/** What accepting an invitation into an app returns: the app's own sign-in page, or null while it has none. */
+export interface AppInviteAccepted {
+    applicationId: string
+    primaryUiUrl: string | null
+}
+
+/** The invitation the emailed link's token names. Rejects with the gateway's message for an expired or used one. */
+export async function fetchInvite(token: string): Promise<InviteDetails> {
+    const res = await fetch(apiUrl('/api/auth/invite/details?token=' + encodeURIComponent(token)))
+    if (!res.ok) {
+        throw new Error(await readError(res, 'This invitation could not be loaded.'))
+    }
+    return await res.json()
+}
+
+/**
+ * Accepts an invitation with a password: a new one for a new account, or the existing account's. Accepting one into
+ * the workspace establishes the session and resolves null; accepting one into an app resolves where its users sign in.
+ */
+export async function acceptInvite(token: string, password: string, displayName: string | null): Promise<AppInviteAccepted | null> {
+    const res = await postJson('/api/auth/invite/accept', { token, password, displayName }, 'Could not accept the invitation')
+    let ret: AppInviteAccepted | null = null
+    if (res.status !== 204) {
+        const body = await res.json()
+        ret = { applicationId: body.applicationId, primaryUiUrl: body.primaryUiUrl ?? null }
+    }
+    return ret
+}
+
+/** Form action that accepts a workspace invitation through a provider; it returns to this UI's / once accepted. */
+export function inviteProviderUrl(configurationId: string, token: string): string {
+    return apiUrl(`/api/auth/invite/oidc/start/${encodeURIComponent(configurationId)}?token=${encodeURIComponent(token)}`)
+}
+
 /** The name a provider key is shown by on its button. */
 export function providerDisplayName(provider: string | null): string {
     let ret: string
@@ -201,14 +252,19 @@ export function providerDisplayName(provider: string | null): string {
     return ret
 }
 
-/** The message for an ?error= code the gateway's redirects put on /login. */
+/** The message for an ?error= code the gateway's redirects put on /login or /invite/accept. */
 export function authErrorMessage(code: string): string {
     let ret: string
     switch (code) {
         case 'no_account': ret = 'No account is linked to that sign-in. Create one, or sign in with your workspace id and password.'; break
         case 'multiple_organizations': ret = 'Your account belongs to several workspaces, but the choice expired. Please sign in again.'; break
         case 'account_exists': ret = 'An account already exists for that email or identity. Sign in instead.'; break
-        case 'account_disabled': ret = 'This account cannot sign in to the workspace.'; break
+        case 'account_disabled':
+        case 'user_disabled': ret = 'This account cannot sign in to the workspace.'; break
+        case 'email_mismatch': ret = 'That sign-in uses a different email from the one invited. Use the invited address, or accept with a password.'; break
+        case 'user_exists': ret = 'An account already uses this email. Accept with its password instead.'; break
+        case 'invite_invalid': ret = 'This invitation is no longer valid. Ask whoever invited you for a new one.'; break
+        case 'config_not_found': ret = 'That sign-in method is not offered for this invitation.'; break
         case 'email_not_verified': ret = 'Your provider has not verified your email address.'; break
         case 'state_mismatch': ret = 'The sign-in expired. Please try again.'; break
         case 'access_denied': ret = 'The sign-in was declined. Please try again.'; break

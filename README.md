@@ -22,7 +22,7 @@ deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, 
 - **Acting as the user.** `AppBuilderService` and its tools call Kinotic's services through `@Proxy` interfaces. They wrap those calls in `SecurityContext.callAs` with the participant of the user's call, so Kinotic authorizes them against the user's organization.
 - **The model.** It comes from the platform's LLM configuration named by `summit42.llmConfigurationName` (default `summit-42`). Add that configuration on the system console's **Platform → LLM configurations** page. Summit 42 reads the configuration and its API key as itself, through `SecurityContext.callWithoutParticipant`, since Kinotic gives the key to no call made for a user.
 - **Repositories.** Each app's repository lives in the user's own GitHub account, through the Kinotic GitHub App. The workspace asks the user to connect GitHub before the first app: it starts Kinotic's install with `<UI origin>/github/callback` as the return URL, GitHub returns to the management server, which forwards the browser there with GitHub's `installation_id`, `state` and `code`, and that page finishes the link with `GitHubAppInstallationService.completeInstall`. A signed-out browser signs in first and comes back to the callback. Claude writes the repository with a short-lived token from Kinotic's `ProjectRepoCredentialService`.
-- **Managing apps.** Beside the chat, the UI calls Kinotic's management and persistence services itself, as the signed-in user: workspace members and their invitations, each app's users, its data, its deployments and history, renaming and deleting it, and the GitHub link. Kinotic scopes each call to the user's organization.
+- **Managing apps.** Beside the chat, the UI calls Kinotic's management and persistence services itself, as the signed-in user: workspace members and their invitations (accepted on the UI's own `/invite/accept` page), each app's users, its data, its deployments and history, renaming and deleting it, and the GitHub link. Kinotic scopes each call to the user's organization.
 - **Conversations.** Each app has its own, held in the server's memory, so a restart starts them over. The apps themselves live in Kinotic, so the list of apps survives a restart. One turn of an app runs at a time, and its conversation cannot be reset while it runs.
 
 ## Kinotic configuration
@@ -31,7 +31,14 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
 
 | Property | Environment variable | Value |
 |---|---|---|
-| `kinotic.domain.cors.allowedOriginPattern` | `KINOTIC_DOMAIN_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; sign-up emails, social sign-ups and the GitHub install return to that origin |
+| `kinotic.domain.cors.allowedOriginPattern` | `KINOTIC_DOMAIN_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; sign-up emails, social sign-ups, invitation links and the GitHub install return to that origin |
+
+Kinotic sends invitations and sign-up verification emails in its own branding unless the UI's origin has templates
+of its own. Summit 42's are in [`email-templates/`](email-templates): for each of `invitation` and `verification`, add
+a template on the system console's **Platform → Email templates** page with the UI's origin (such as
+`https://dev-summit42.kinotic.ai`), the matching email, and the contents of `subject.txt`, `body.html` and `body.txt`.
+An invitation's link opens the UI's `/invite/accept` page, where the invitee sets a password or accepts through a
+sign-in provider; an invitation into one of the user's apps then sends them to that app's own sign-in page.
 
 ## Run locally
 

@@ -39,7 +39,7 @@ bun run build        # vue-tsc type-check, then vite build into dist/
 ```
 
 `dist/` is a history-mode SPA: whatever serves it must answer unknown paths (`/login`, `/signup/verify`, `/register`,
-`/github/callback`) with `index.html`.
+`/invite/accept`, `/github/callback`) with `index.html`.
 
 ## Routes
 
@@ -59,3 +59,4 @@ bun run build        # vue-tsc type-check, then vite build into dist/
 | `/signup` | Create an account with a social provider or email |
 | `/signup/verify?token=` | The emailed link's page: name the workspace and set a password |
 | `/register?token=` | Where a social sign-up returns: name the workspace |
+| `/invite/accept?token=` | The emailed invitation's page: accept with a password or a sign-in provider; an invitation into an app then opens the app's own sign-in page |

@@ -38,6 +38,7 @@ const router = createRouter({
         { path: '/signup', component: () => import('@/pages/SignupPage.vue'), meta: { public: true } },
         { path: '/signup/verify', component: () => import('@/pages/VerifyEmailPage.vue'), meta: { public: true } },
         { path: '/register', component: () => import('@/pages/RegisterPage.vue'), meta: { public: true } },
+        { path: '/invite/accept', component: () => import('@/pages/InviteAcceptPage.vue'), meta: { public: true } },
         { path: '/:pathMatch(.*)*', redirect: '/' },
     ],
 })
