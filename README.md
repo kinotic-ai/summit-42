@@ -35,8 +35,8 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
 
 Kinotic sends invitations and sign-up verification emails in its own branding unless the UI's origin has templates
 of its own. Summit 42's are in [`email-templates/`](email-templates). Kinotic's migrations seed them for
-`http://localhost:5175` in a development stack and `https://dev-summit42.kinotic.ai` on the development server. For any
-other origin, add one template for each of `invitation` and `verification` on the system console's **Platform → Email
+`http://localhost:5175` in a development stack, `https://dev-summit42.kinotic.ai` on the development server and
+`https://summit42.kinotic.ai` in production. For any other origin, add one template for each of `invitation` and `verification` on the system console's **Platform → Email
 templates** page with the UI's origin, the matching email, and the contents of `subject.txt`, `body.html` and
 `body.txt`. Kinotic's seeds are copies of these files, so an edit here is carried to them by hand.
 An invitation's link opens the UI's `/invite/accept` page, where the invitee sets a password or accepts through a
