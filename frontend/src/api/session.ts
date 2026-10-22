@@ -9,6 +9,10 @@ export const SESSION = reactive({
     connected: false,
     /** The organization (workspace) the session is signed in to, once connected. */
     organizationId: null as string | null,
+    /** The signed-in user's name, or their email when they gave none, once connected. */
+    displayName: null as string | null,
+    /** The signed-in user's email, once connected. */
+    email: null as string | null,
 })
 
 // run when an open connection ends and will not be retried
@@ -45,6 +49,8 @@ export function connect(): Promise<boolean> {
         } else if (await hasSession()) {
             const connectedInfo = await Kinotic.connect({ server: KINOTIC_SERVER, maxConnectionAttempts: MAX_CONNECTION_ATTEMPTS })
             SESSION.organizationId = organizationIdOf(connectedInfo.participant)
+            SESSION.displayName = connectedInfo.participant?.metadata?.displayName ?? null
+            SESSION.email = connectedInfo.participant?.metadata?.email ?? null
             if (SESSION.organizationId) {
                 rememberWorkspace(SESSION.organizationId)
             }
@@ -61,6 +67,8 @@ export function signOut(): Promise<void> {
         // cleared before the disconnect so the connection handler does not read it as a lost session
         SESSION.connected = false
         SESSION.organizationId = null
+        SESSION.displayName = null
+        SESSION.email = null
         try {
             await logout()
         } finally {

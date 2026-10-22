@@ -1,0 +1,1 @@
+{{#if applicationName}}{{inviterName}} invited you to {{applicationName}}{{else}}{{inviterName}} invited you to Summit 42{{/if}}

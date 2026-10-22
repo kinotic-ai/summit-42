@@ -12,10 +12,10 @@ import org.kinotic.management.api.model.deployment.DeploymentState;
 import org.kinotic.management.api.model.deployment.DeploymentStatusType;
 import org.kinotic.management.api.model.deployment.ProjectDeployment;
 import org.kinotic.management.api.model.deployment.UiDeployment;
+import org.kinotic.management.api.services.ProjectService;
+import org.kinotic.management.api.services.deployment.UiDeploymentService;
+import org.kinotic.management.api.services.github.ProjectRepoCredentialService;
 import org.kinotic.summit42.api.model.BuildEvent;
-import org.kinotic.summit42.internal.api.proxies.ProjectRepoCredentialServiceProxy;
-import org.kinotic.summit42.internal.api.proxies.ProjectServiceProxy;
-import org.kinotic.summit42.internal.api.proxies.UiDeploymentServiceProxy;
 import org.kinotic.summit42.internal.api.repositories.BuilderSession;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
@@ -82,9 +82,9 @@ public class AppBuilderTools {
 
     private final Vertx vertx;
     private final SecurityContext securityContext;
-    private final ProjectServiceProxy projectService;
-    private final UiDeploymentServiceProxy uiDeploymentService;
-    private final ProjectRepoCredentialServiceProxy repoCredentialService;
+    private final ProjectService projectService;
+    private final UiDeploymentService uiDeploymentService;
+    private final ProjectRepoCredentialService repoCredentialService;
     private final GitHubRepoClient gitHubRepoClient;
     private final WebClient webClient;
 
@@ -272,6 +272,10 @@ public class AppBuilderTools {
         BuilderTurn turn = (BuilderTurn) toolContext.getContext().get(TURN);
         Validate.validState(turn.hold(), "The turn has ended");
         try {
+            synchronized (turn.getSession()) {
+                // the app was deleted, and one created again under its name has the same project id
+                Validate.validState(!turn.getSession().isDeleted(), "The app was deleted");
+            }
             return work.apply(turn);
         } finally {
             turn.release();

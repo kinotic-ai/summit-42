@@ -4,6 +4,27 @@ spring:
 
 # Summit 42 joins the Kinotic cluster as a member; deployments set the cluster's discovery, for example
 # KINOTIC_IGNITE_DISCOVERYTYPE=LOCAL with KINOTIC_IGNITE_LOCALADDRESSES naming the Kinotic servers.
+# It runs Kinotic's domain and management-api modules in process, so a deployment also gives it the settings the
+# management server has: Elasticsearch, secret storage, email, platform secrets and the GitHub App's key and webhook
+# secret.
+
+kinotic:
+  domain:
+    oauth:
+      # The clients Kinotic's servers accept, which kinotic-domain requires every server running it to name
+      allowedClientIds:
+        # Claude Code
+        - https://claude.ai/oauth/claude-code-client-metadata
+        # Claude web, desktop, and mobile custom connectors
+        - https://claude.ai/oauth/mcp-oauth-client-metadata
+  managementApi:
+    # Summit 42 runs management-api's services without an API gateway; the management server serves MCP
+    disableMcpServer: true
+    # Kinotic's GitHub App, which creates each app's repository and issues the tokens Summit 42 commits with
+    github:
+      appId: 3584018
+      appSlug: kinotic-ai
+      repoTemplate: kinotic-ai/kinotic-tpl-isomorphic-ts
 
 summit42:
   llmConfigurationName: summit-42

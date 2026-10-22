@@ -1,99 +1,103 @@
 <template>
-  <div class="app-chat">
-    <div class="apphead">
-      <div class="apphead__inner">
-        <button type="button" class="btn btn--ghost apphead__back" aria-label="All apps" @click="emit('back')">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          <span class="apphead__back-label">Apps</span>
-        </button>
-        <span class="apphead__name" :title="app.name">{{ app.name }}</span>
-        <span class="apphead__spacer" />
-        <button type="button" class="btn btn--ghost" :disabled="streaming || resetting || loading" @click="startOver">
-          <span v-if="resetting" class="spinner" />
-          Start over
-        </button>
+  <aside class="chat" aria-label="Chat">
+    <header class="chat__head">
+      <div class="chat__heading">
+        <h2 class="chat__title">Chat</h2>
+        <p class="chat__subtitle">{{ app.url ? `Ask for a change and Summit 42 redeploys ${app.name}.` : `Tell Summit 42 what ${app.name} should do.` }}</p>
+        <div :class="['chat__status', `chat__status--${status.kind}`]">
+          <span v-if="status.kind === 'working'" class="spinner" />
+          <AppIcon v-else-if="status.kind === 'live'" name="check" :stroke-width="2.5" />
+          <a v-if="status.kind === 'live' && app.url" :href="app.url" target="_blank" rel="noopener">{{ status.text }}</a>
+          <span v-else>{{ status.text }}</span>
+        </div>
       </div>
+      <button v-if="turns.length > 0" type="button" class="btn btn--ghost" :disabled="streaming || resetting || loading" @click="startOver">
+        <span v-if="resetting" class="spinner" />
+        Start over
+      </button>
+      <button type="button" class="icon-btn" aria-label="Close chat" @click="emit('close')"><AppIcon name="close" /></button>
+    </header>
+
+    <div ref="scroller" class="chat__messages">
+      <div v-if="notice" class="alert alert--error" role="alert">{{ notice }}</div>
+
+      <div v-if="loading" class="chat__loading"><span class="spinner" /> Loading the conversation…</div>
+
+      <div v-else-if="loadError" class="alert alert--error" role="alert">
+        {{ loadError }}
+        <button type="button" class="link-button" @click="load">Try again</button>
+      </div>
+
+      <section v-else-if="turns.length === 0" class="chat__empty">
+        <h3>What should {{ app.name }} do?</h3>
+        <p class="muted">Describe it in plain words. Summit 42 builds it, deploys it, and keeps changing it as you chat.</p>
+        <button v-if="app.description" type="button" class="idea" @click="useIdea(app.description)">{{ app.description }}</button>
+      </section>
+
+      <template v-else>
+        <div v-for="(turn, index) in turns"
+             :key="index"
+             :class="['msg', turn.role === 'USER' ? 'msg--user' : 'msg--assistant']">
+          <div v-if="turn.text" class="msg__bubble">{{ turn.text }}</div>
+          <ul v-if="turn.steps.length > 0" class="steps" aria-label="What Summit 42 did" aria-live="polite">
+            <li v-for="(step, stepIndex) in turn.steps" :key="stepIndex" :class="['step', `step--${step.state}`]">
+              <span class="step__icon">
+                <span v-if="step.state === 'active'" class="spinner" />
+                <AppIcon v-else-if="step.state === 'done'" name="check" :stroke-width="3" />
+                <AppIcon v-else name="close" :stroke-width="3" />
+              </span>
+              <span>{{ step.text }}</span>
+            </li>
+          </ul>
+          <div v-if="turn.error" class="msg__error" role="alert">{{ turn.error }}</div>
+        </div>
+
+        <div v-if="streaming && !lastTurnHasContent" class="thinking" aria-live="polite">
+          <span class="spinner" /> Thinking…
+        </div>
+      </template>
     </div>
 
-    <main ref="scroller" class="chat">
-      <div class="chat__inner">
-        <div v-if="notice" class="alert alert--error" role="alert">{{ notice }}</div>
-
-        <div v-if="loading" class="chat__status">
-          <span class="spinner" /> Loading the conversation…
-        </div>
-
-        <div v-else-if="loadError" class="alert alert--error" role="alert">
-          {{ loadError }}
-          <button type="button" class="link-button" @click="load">Try again</button>
-        </div>
-
-        <section v-else-if="turns.length === 0" class="welcome">
-          <h1>What should {{ app.name }} do?</h1>
-          <p class="muted">Describe it in plain words. Summit 42 builds it, deploys it, and keeps changing it as you chat.</p>
-          <div v-if="app.description" class="welcome__ideas">
-            <button type="button" class="idea" @click="useIdea(app.description)">{{ app.description }}</button>
-          </div>
-        </section>
-
-        <template v-else>
-          <div v-for="(turn, index) in turns"
-               :key="index"
-               :class="['msg', turn.role === 'USER' ? 'msg--user' : 'msg--assistant']">
-            <div v-if="turn.text" class="msg__bubble">{{ turn.text }}</div>
-            <a v-if="turn.appUrl" :href="turn.appUrl" target="_blank" rel="noopener" class="ready">
-              <span class="ready__title">Your app is live</span>
-              <span class="ready__url">{{ turn.appUrl }}</span>
-              <span class="ready__cta">Open ↗</span>
-            </a>
-            <div v-if="turn.error" class="msg__error" role="alert">{{ turn.error }}</div>
-          </div>
-
-          <div v-if="streaming" class="progress" aria-live="polite">
-            <span class="spinner" />
-            <span>{{ progress ?? 'Thinking…' }}</span>
-          </div>
-        </template>
-      </div>
-    </main>
-
-    <footer class="composer">
-      <div class="composer__inner">
-        <a v-if="app.url" :href="app.url" target="_blank" rel="noopener" class="btn btn--success btn--block open-app">
-          Open {{ app.name }} ↗
-        </a>
-        <form class="composer__form" @submit.prevent="send">
-          <textarea ref="input"
-                    v-model="draft"
-                    rows="1"
-                    class="composer__input"
-                    :placeholder="turns.length === 0 ? `Describe what ${app.name} should do…` : 'Ask for a change…'"
-                    :disabled="loading || loadError !== null"
-                    aria-label="Message"
-                    @keydown="onKeydown"
-                    @input="autosize" />
-          <button type="submit" class="btn composer__send" :disabled="!canSend" aria-label="Send">
-            <span v-if="streaming" class="spinner" />
-            <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          </button>
-        </form>
-        <p class="composer__hint muted">Enter to send · Shift+Enter for a new line</p>
-      </div>
+    <footer class="chat__composer">
+      <form class="composer" @submit.prevent="send">
+        <textarea ref="input"
+                  v-model="draft"
+                  rows="1"
+                  class="composer__input"
+                  :placeholder="turns.length === 0 ? `Describe what ${app.name} should do…` : 'Ask for a change…'"
+                  :disabled="loading || loadError !== null"
+                  aria-label="Message"
+                  @keydown="onKeydown"
+                  @input="autosize" />
+        <button type="submit" class="btn composer__send" :disabled="!canSend" :aria-label="streaming ? 'Working' : 'Send'">
+          <span v-if="streaming" class="spinner" />
+          <AppIcon v-else name="send" :stroke-width="2.25" />
+        </button>
+      </form>
+      <p class="composer__hint">Enter to send · Shift+Enter for a new line</p>
     </footer>
-  </div>
+  </aside>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Subscription } from 'rxjs'
+import AppIcon from '@/components/AppIcon.vue'
 import { APP_BUILDER, type BuildEvent, type BuilderApp, type ChatRole, type Conversation } from '@/api/appBuilder'
+import { errorText, hostOf } from '@/api/format'
 
-/** One message as the chat shows it: an assistant turn also carries what failed and the app it made live. */
+/** One thing the builder did in a turn, as the PROGRESS events report it. */
+interface Step {
+  text: string
+  state: 'active' | 'done' | 'failed'
+}
+
+/** One message as the chat shows it: an assistant turn also carries the steps it took and what failed. */
 interface Turn {
   role: ChatRole
   text: string
+  steps: Step[]
   error: string | null
-  appUrl: string | null
 }
 
 /** The chat with the builder about one app; the parent remounts it for another app. */
@@ -102,10 +106,12 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** The user asked for the list of apps. */
-  back: []
   /** The app was deployed and its UI serves at the url. */
   deployed: [url: string]
+  /** What the builder is doing now, or null once the turn is over. */
+  activity: [text: string | null]
+  /** The user closed the chat. */
+  close: []
 }>()
 
 const turns = ref<Turn[]>([])
@@ -114,7 +120,6 @@ const loading = ref(true)
 const loadError = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const streaming = ref(false)
-const progress = ref<string | null>(null)
 const resetting = ref(false)
 
 const scroller = ref<HTMLElement | null>(null)
@@ -125,16 +130,38 @@ let subscription: Subscription | null = null
 const canSend = computed(() => !streaming.value && !loading.value && loadError.value === null
                                && draft.value.trim().length > 0)
 
+const lastTurnHasContent = computed(() => {
+  const last = turns.value[turns.value.length - 1]
+  return last !== undefined && last.role === 'ASSISTANT' && (last.text.length > 0 || last.steps.length > 0)
+})
+
+const currentStep = computed(() => {
+  const last = turns.value[turns.value.length - 1]
+  return last?.steps.find(step => step.state === 'active')?.text ?? null
+})
+
+// the one-line status the header shows when the chat fills the screen and the page behind it is hidden
+const status = computed(() => {
+  let ret: { kind: 'working' | 'live' | 'idle'; text: string }
+  if (streaming.value) {
+    ret = { kind: 'working', text: currentStep.value ?? 'Thinking' }
+  } else if (props.app.url) {
+    ret = { kind: 'live', text: `Live at ${hostOf(props.app.url)}` }
+  } else {
+    ret = { kind: 'idle', text: 'Not deployed yet' }
+  }
+  return ret
+})
+
 onMounted(load)
 
-onBeforeUnmount(() => subscription?.unsubscribe())
-
-function errorText(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback
-}
+onBeforeUnmount(() => {
+  subscription?.unsubscribe()
+  emit('activity', null)
+})
 
 function show(conversation: Conversation) {
-  turns.value = (conversation.messages ?? []).map(message => ({ role: message.role, text: message.text, error: null, appUrl: null }))
+  turns.value = (conversation.messages ?? []).map(message => ({ role: message.role, text: message.text, steps: [], error: null }))
 }
 
 async function load() {
@@ -158,12 +185,12 @@ function send() {
   draft.value = ''
   notice.value = null
   void nextTick(autosize)
-  turns.value.push({ role: 'USER', text: message, error: null, appUrl: null })
-  turns.value.push({ role: 'ASSISTANT', text: '', error: null, appUrl: null })
+  turns.value.push({ role: 'USER', text: message, steps: [], error: null })
+  turns.value.push({ role: 'ASSISTANT', text: '', steps: [], error: null })
   // the pushed object is wrapped in a reactive proxy, which the stream's updates must go through to render
   const reply = turns.value[turns.value.length - 1] as Turn
   streaming.value = true
-  progress.value = null
+  emit('activity', 'Thinking')
   void scrollToBottom(true)
 
   subscription = APP_BUILDER.chat(props.app.applicationId, message).subscribe({
@@ -179,31 +206,45 @@ function send() {
   })
 }
 
+function settleActiveStep(reply: Turn, state: Step['state']) {
+  const active = reply.steps.find(step => step.state === 'active')
+  if (active) {
+    active.state = state
+  }
+}
+
 function apply(reply: Turn, event: BuildEvent) {
   switch (event.type) {
     case 'TEXT':
       reply.text += event.text ?? ''
       break
     case 'PROGRESS':
-      progress.value = event.text
+      if (event.text && event.text !== currentStep.value) {
+        settleActiveStep(reply, 'done')
+        reply.steps.push({ text: event.text, state: 'active' })
+        emit('activity', event.text)
+      }
       break
     case 'APP_READY':
-      reply.appUrl = event.url
+      settleActiveStep(reply, 'done')
       if (event.url) {
+        reply.steps.push({ text: `Live at ${hostOf(event.url)}`, state: 'done' })
         emit('deployed', event.url)
       }
       break
     case 'ERROR':
+      settleActiveStep(reply, 'failed')
       reply.error = event.text || 'Something went wrong.'
       break
   }
 }
 
 function finishTurn(reply: Turn) {
+  settleActiveStep(reply, reply.error ? 'failed' : 'done')
   streaming.value = false
-  progress.value = null
   subscription = null
-  if (!reply.text && !reply.error && !reply.appUrl) {
+  emit('activity', null)
+  if (!reply.text && !reply.error && reply.steps.length === 0) {
     turns.value = turns.value.filter(turn => turn !== reply)
   }
   void nextTick(() => input.value?.focus())
@@ -258,62 +299,88 @@ async function startOver() {
 </script>
 
 <style scoped>
-.app-chat {
+.chat {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  min-width: 0;
   min-height: 0;
+  background: var(--panel-solid);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.35);
 }
 
-.apphead {
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.apphead__inner {
+.chat__head {
   display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 1rem 0.9rem 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat__heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.chat__subtitle {
+  margin: 0.1rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* shown only when the chat fills the screen, in place of the page behind it */
+.chat__status {
+  display: none;
   align-items: center;
-  gap: 0.5rem;
-  max-width: 48rem;
-  margin: 0 auto;
-  padding: 0.4rem 1rem;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+  min-width: 0;
+  font-size: 0.82rem;
+  font-weight: 500;
 }
 
-.apphead__back {
-  gap: 0.25rem;
-  padding-left: 0.4rem;
-}
-
-.apphead__back svg {
-  width: 1.1rem;
-  height: 1.1rem;
-}
-
-.apphead__name {
+.chat__status > a,
+.chat__status > span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 700;
-  letter-spacing: -0.01em;
 }
 
-.apphead__spacer {
-  flex: 1;
+.chat__status--working {
+  color: var(--accent-link);
 }
 
-.chat {
+.chat__status--live {
+  color: var(--success-text);
+}
+
+.chat__status--idle {
+  color: var(--text-muted);
+}
+
+.chat__status .icon {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.chat__messages {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.chat__inner {
-  max-width: 48rem;
-  margin: 0 auto;
-  padding: 1.5rem 1rem 1rem;
-}
-
-.chat__status {
+.chat__loading {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -322,19 +389,30 @@ async function startOver() {
   color: var(--text-muted);
 }
 
-.welcome__ideas {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.6rem;
+.chat__empty {
+  margin: auto 0;
+  padding: 1.5rem 0.5rem;
+  text-align: center;
+}
+
+.chat__empty h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.chat__empty p {
+  max-width: 22rem;
+  margin: 0 auto 1rem;
 }
 
 .idea {
   max-width: 100%;
-  padding: 0.55rem 0.9rem;
-  border: 1px solid var(--border);
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text);
   font-size: 0.9rem;
   cursor: pointer;
@@ -342,15 +420,14 @@ async function startOver() {
 }
 
 .idea:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-border);
   background: var(--accent-soft);
 }
 
 .msg {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  gap: 0.6rem;
 }
 
 .msg--user {
@@ -362,7 +439,7 @@ async function startOver() {
 }
 
 .msg__bubble {
-  max-width: min(85%, 40rem);
+  max-width: 88%;
   padding: 0.7rem 0.95rem;
   border-radius: 16px;
   white-space: pre-wrap;
@@ -370,170 +447,177 @@ async function startOver() {
 }
 
 .msg--user .msg__bubble {
-  background: var(--user-bubble);
-  color: var(--user-text);
+  max-width: 85%;
+  border: 1px solid rgba(232, 135, 90, 0.35);
   border-bottom-right-radius: 4px;
+  background: rgba(232, 135, 90, 0.16);
 }
 
 .msg--assistant .msg__bubble {
-  background: var(--surface);
-  border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
+  background: var(--bubble);
 }
 
 .msg__error {
-  max-width: min(85%, 40rem);
+  max-width: 88%;
   padding: 0.6rem 0.9rem;
   border-radius: 12px;
   background: var(--danger-soft);
-  color: var(--danger);
-  font-size: 0.92rem;
+  color: var(--danger-text);
+  font-size: 0.9rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.ready {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.1rem 1rem;
-  align-items: center;
-  width: min(85%, 26rem);
-  padding: 0.8rem 1rem;
-  border: 1px solid var(--success);
-  border-radius: 14px;
-  background: var(--success-soft);
-  color: var(--text);
+.steps {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  list-style: none;
+  font-size: 0.875rem;
+  line-height: 1.4;
 }
 
-.ready:hover {
-  text-decoration: none;
-  filter: brightness(0.98);
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  color: var(--text-nav);
+  overflow-wrap: anywhere;
 }
 
-.ready__title {
-  font-weight: 700;
-  color: var(--success);
-}
-
-.ready__url {
-  grid-column: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.ready__cta {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  font-weight: 600;
-  color: var(--success);
-}
-
-.progress {
+.step__icon {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0.85rem;
+  justify-content: center;
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+}
+
+.step__icon .icon {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.step__icon .spinner {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.step--done .step__icon {
+  background: rgba(95, 207, 158, 0.18);
+  color: var(--success-text);
+}
+
+.step--active {
+  color: var(--accent-link);
+}
+
+.step--failed {
+  color: var(--danger-text);
+}
+
+.step--failed .step__icon {
+  background: var(--danger-soft);
+}
+
+.thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  align-self: flex-start;
+  padding: 0.45rem 0.8rem;
   border-radius: 999px;
   background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.9rem;
+  color: var(--accent-link);
+  font-size: 0.875rem;
+}
+
+.chat__composer {
+  padding: 0.75rem 1rem 0.6rem;
+  padding-bottom: max(0.6rem, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
 }
 
 .composer {
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-.composer__inner {
-  max-width: 48rem;
-  margin: 0 auto;
-  padding: 0.75rem 1rem 0.5rem;
-}
-
-.open-app {
-  margin-bottom: 0.65rem;
-}
-
-.composer__form {
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
   padding: 0.4rem 0.4rem 0.4rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--input-bg);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.composer__form:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+.composer:focus-within {
+  border-color: rgba(232, 135, 90, 0.7);
+  box-shadow: 0 0 0 3px rgba(232, 135, 90, 0.18);
 }
 
 .composer__input {
   flex: 1;
+  min-width: 0;
   min-height: 2.5rem;
   max-height: 200px;
   padding: 0.5rem 0;
   border: none;
   background: transparent;
+  color: var(--text);
   outline: none;
   resize: none;
   line-height: 1.5;
+}
+
+.composer__input::placeholder {
+  color: var(--text-subtle);
 }
 
 .composer__send {
   width: 2.5rem;
   min-height: 2.5rem;
   padding: 0;
-  border-radius: 12px;
 }
 
-.composer__send svg {
-  width: 1.2rem;
-  height: 1.2rem;
+.composer__send .icon {
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
 .composer__hint {
   margin: 0.4rem 0 0;
   font-size: 0.75rem;
   text-align: center;
+  color: var(--text-subtle);
+}
+
+@media (max-width: 860px) {
+  .chat {
+    border-left: none;
+    box-shadow: none;
+  }
+
+  .chat__status {
+    display: flex;
+  }
 }
 
 @media (max-width: 560px) {
-  .apphead__inner {
-    padding: 0.35rem 0.5rem;
-    gap: 0.25rem;
-  }
-
-  .apphead__back-label {
-    display: none;
-  }
-
-  .apphead .btn--ghost {
-    padding: 0 0.55rem;
-    font-size: 0.9rem;
-  }
-
-  .chat__inner {
-    padding: 1rem 0.75rem;
+  .chat__messages {
+    padding: 1rem 0.85rem;
   }
 
   .msg__bubble,
   .msg__error {
     max-width: 92%;
-  }
-
-  .ready {
-    width: 92%;
-  }
-
-  .composer__inner {
-    padding: 0.6rem 0.75rem 0.4rem;
   }
 
   .composer__hint {

@@ -3,6 +3,7 @@ package org.kinotic.summit42.fakes;
 import io.vertx.core.Future;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.management.api.model.deployment.UiDeployment;
+import org.kinotic.management.api.services.deployment.UiDeploymentService;
 
 import java.util.Comparator;
 import java.util.List;
@@ -14,7 +15,7 @@ import java.util.function.Predicate;
 /**
  * Holds each organization's UI deployments in memory, answering them ordered by UI name.
  */
-public class FakeUiDeploymentService extends FakeOrganizationService implements PublishedUiDeploymentService {
+public abstract class FakeUiDeploymentService extends FakeOrganizationService implements UiDeploymentService {
 
     private final Map<String, List<UiDeployment>> deployments = new ConcurrentHashMap<>();
 

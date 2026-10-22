@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.kinotic.domain.api.model.ApplicationKey;
 import org.kinotic.domain.api.model.security.participant.DefaultOrganizationParticipant;
+import org.kinotic.summit42.api.model.Conversation;
 import org.kinotic.summit42.internal.api.repositories.BuilderSession;
 
 public class BuilderTurnTests {
@@ -45,7 +46,7 @@ public class BuilderTurnTests {
     }
 
     private static BuilderSession runningSession() {
-        return new BuilderSession(new ApplicationKey("org", "app")).setTurnRunning(true);
+        return new BuilderSession(new ApplicationKey("org", "app"), new Conversation()).setTurnRunning(true);
     }
 
     private static BuilderTurn turnOf(BuilderSession session) {

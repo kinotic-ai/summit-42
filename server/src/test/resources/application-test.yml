@@ -1,6 +1,6 @@
 # The tests boot Summit 42 as the only member of a cluster of its own: discovery finds no node but this one, so
-# a Kinotic cluster running on the same machine is never joined, and the Kinotic services Summit 42 calls have no
-# handlers.
+# a Kinotic cluster running on the same machine is never joined, and the Kinotic services Summit 42 calls over the
+# cluster have no handlers but the fakes FakeKinoticConfiguration publishes.
 kinotic:
   eventBusClusterHost: 127.0.0.1
   ignite:
@@ -8,3 +8,15 @@ kinotic:
     localAddress: 127.0.0.1
     discoveryPort: 47650
     localAddresses: 127.0.0.1:47650
+
+# FakeKinoticConfiguration stands in for the Kinotic modules Summit 42 runs in process
+spring:
+  autoconfigure:
+    exclude:
+      - org.kinotic.domain_autoconfig.KinoticDomainAutoConfiguration
+      - org.kinotic.ee_autoconfig.KinoticEeAutoConfiguration
+      - org.kinotic.grind_autoconfig.KinoticGrindAutoConfiguration
+      - org.kinotic.management_autoconfig.KinoticManagementApiAutoConfiguration
+
+summit42:
+  uiBaseUrl: https://summit42.example.test

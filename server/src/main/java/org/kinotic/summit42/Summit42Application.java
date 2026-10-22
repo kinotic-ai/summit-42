@@ -1,31 +1,22 @@
 package org.kinotic.summit42;
 
 import org.kinotic.core.api.annotations.EnableKinotic;
-import org.kinotic.domain.internal.config.KinoticDomainJacksonConfig;
 import org.kinotic.summit42.api.config.Summit42Properties;
+import org.kinotic.system_autoconfig.KinoticSystemApiAutoConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.Import;
 
 /**
  * Summit 42, the chat app builder: a Kinotic cluster member that hosts
  * {@link org.kinotic.summit42.api.services.AppBuilderService} in the {@code management-api} zone and serves the
  * Summit 42 UI.
  */
-// The Kinotic modules are on the classpath for their model types and proxied services, which the cluster's
-// servers host; their own services need Elasticsearch, so their auto-configuration is excluded. The
-// participant subtypes that event senders deserialize to are registered by KinoticDomainJacksonConfig.
-// The auto-configurations are named rather than referenced, since kinotic-sql and kinotic-grind are only runtime
-// dependencies.
-@SpringBootApplication(excludeName = {"org.kinotic.domain_autoconfig.KinoticDomainAutoConfiguration",
-                                      "org.kinotic.sql_autoconfig.KinoticSqlAutoConfiguration",
-                                      "org.kinotic.grind_autoconfig.KinoticGrindAutoConfiguration",
-                                      "org.kinotic.management_autoconfig.KinoticManagementApiAutoConfiguration",
-                                      "org.kinotic.system_autoconfig.KinoticSystemApiAutoConfiguration"})
+// Summit 42 runs Kinotic's domain and management-api modules in process and calls their services directly. The
+// system server runs system-api, whose services Summit 42 calls over the cluster, so its auto-configuration is excluded.
+@SpringBootApplication(exclude = KinoticSystemApiAutoConfiguration.class)
 @EnableKinotic
 @EnableConfigurationProperties(Summit42Properties.class)
-@Import(KinoticDomainJacksonConfig.class)
 public class Summit42Application {
 
     static void main(String[] args) {

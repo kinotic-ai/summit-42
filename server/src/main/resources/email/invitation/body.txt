@@ -1,0 +1,16 @@
+Hi,
+
+{{#if applicationName}}
+{{inviterName}} invited you to use {{applicationName}}, an app built on Summit 42.
+{{else}}
+{{inviterName}} invited you to build apps with them in {{organizationName}} on Summit 42.
+{{/if}}
+
+Accept the invitation:
+
+{{acceptUrl}}
+
+This invitation expires in {{expiresInDays}} days. If you weren't expecting it,
+you can ignore this email.
+
+Summit 42
