@@ -10,7 +10,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/components/AuthShell.vue'
-import { GITHUB } from '@/api/github'
+import { Kinotic } from '@kinotic-ai/core'
 
 /**
  * Where GitHub's install returns, through Kinotic, with installation_id, state and code in the query: finishes the
@@ -35,7 +35,7 @@ onMounted(async () => {
     return
   }
   try {
-    await GITHUB.completeInstall(installationId, state, code)
+    await Kinotic.githubAppInstallations.completeInstall(installationId, state, code)
     await router.replace('/')
   } catch (err) {
     error.value = err instanceof Error && err.message ? err.message : 'Could not finish connecting GitHub.'

@@ -1,5 +1,7 @@
 import { Kinotic, type IKinotic, type IServiceProxy } from '@kinotic-ai/core'
 import type { Observable } from 'rxjs'
+import { reactive } from 'vue'
+import { SESSION } from '@/api/session'
 
 /** What one event of a chat turn carries. */
 export type BuildEventType = 'TEXT' | 'PROGRESS' | 'APP_READY' | 'ERROR'
@@ -76,3 +78,52 @@ export class AppBuilderService {
 }
 
 export const APP_BUILDER = new AppBuilderService(Kinotic)
+
+/** The workspace's apps every page reads, ordered by name; {@link loadApps} fills it. */
+export const APPS = reactive({
+    list: [] as BuilderApp[],
+    /** The workspace the list was loaded for, or null before the first load. */
+    organizationId: null as string | null,
+})
+
+/** Loads the signed-in workspace's apps into {@link APPS}. */
+export async function loadApps(): Promise<void> {
+    APPS.list = await APP_BUILDER.findApps()
+    APPS.organizationId = SESSION.organizationId
+}
+
+/** Loads the signed-in workspace's apps into {@link APPS} unless they are loaded already. */
+export async function ensureAppsLoaded(): Promise<void> {
+    if (APPS.organizationId === null || APPS.organizationId !== SESSION.organizationId) {
+        await loadApps()
+    }
+}
+
+/** Creates an app and adds it to {@link APPS}. */
+export async function createApp(name: string, description: string | null): Promise<BuilderApp> {
+    const app = await APP_BUILDER.createApp(name, description)
+    APPS.list = [...APPS.list, app].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+    return APPS.list.find(listed => listed.applicationId === app.applicationId) ?? app
+}
+
+/** Records that the app was deployed and its UI serves at the url. */
+export function markDeployed(applicationId: string, url: string): void {
+    const app = APPS.list.find(listed => listed.applicationId === applicationId)
+    if (app) {
+        app.url = url
+    }
+}
+
+/** Removes a deleted app from {@link APPS}. */
+export function forgetApp(applicationId: string): void {
+    APPS.list = APPS.list.filter(listed => listed.applicationId !== applicationId)
+}
+
+/** Records an app's new name and description. */
+export function markRenamed(applicationId: string, name: string, description: string | null): void {
+    const app = APPS.list.find(listed => listed.applicationId === applicationId)
+    if (app) {
+        app.name = name
+        app.description = description
+    }
+}

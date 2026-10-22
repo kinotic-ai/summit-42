@@ -3,6 +3,8 @@
 The chat-only UI of Summit 42: people sign up, create and name their apps, describe each one in a chat, and the
 Summit 42 server builds and deploys it as a Kinotic app. A Vue 3 + Vite + TypeScript SPA that signs in to the Kinotic management gateway and
 talks to `AppBuilderService`, in Kinotic's `management-api` zone, over Kinotic's STOMP connection (`@kinotic-ai/core`).
+The workspace and app pages call Kinotic's own services over the same connection, through `@kinotic-ai/management-api`
+and `@kinotic-ai/persistence`, so members, app users, data and deployments are managed here rather than in Kinotic's UIs.
 
 ## Run against a local Kinotic
 
@@ -43,7 +45,15 @@ bun run build        # vue-tsc type-check, then vite build into dist/
 
 | Path | Page |
 |---|---|
-| `/` | The workspace: the list of apps, creating an app, and with `?app=<application id>` the chat with the builder about that app (redirects to `/login?referer=<path>` without a session, which returns there after signing in) |
+| `/` | The workspace's apps: connecting GitHub, creating an app, and a card per app with its link (every signed-in page redirects to `/login?referer=<path>` without a session, which returns there after signing in) |
+| `/members` | The workspace's members: invite, resend or cancel an invitation, disable, enable or remove |
+| `/settings` | The workspace's GitHub link, its own sign-in methods, and its id |
+| `/apps/<application id>` | Build: the app's status and link beside the chat with the builder, which shows each step of a build as it runs |
+| `/apps/<application id>/overview` | The app's link, status, data types, users, repository and recent deployments |
+| `/apps/<application id>/data` | The records of each of the app's entity types, searchable and paged |
+| `/apps/<application id>/users` | The people who sign in to the app: invite, disable, enable or remove |
+| `/apps/<application id>/deployments` | The deployment's status, live commit, published pages and history |
+| `/apps/<application id>/settings` | Rename the app, its id and repository, and deleting it |
 | `/github/callback` | Where GitHub's install returns, through Kinotic, with `installation_id`, `state` and `code`: finishes linking GitHub and opens the workspace |
 | `/login` | Sign in: social buttons, or email and password for the workspace this browser last used |
 | `/signup` | Create an account with a social provider or email |
