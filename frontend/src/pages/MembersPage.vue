@@ -69,6 +69,7 @@ import { Kinotic, Pageable } from '@kinotic-ai/core'
 import type { OrganizationMember, PendingInviteSummary } from '@kinotic-ai/management-api'
 import AppIcon from '@/components/AppIcon.vue'
 import InviteDrawer from '@/components/InviteDrawer.vue'
+import { INVITATION_EMAIL_TEMPLATE_ID } from '@/api/auth'
 import { errorText, formatDate, initialsOf } from '@/api/format'
 import { SESSION } from '@/api/session'
 
@@ -140,12 +141,12 @@ async function act(member: OrganizationMember, action: () => Promise<unknown>, f
 }
 
 async function invite(email: string, displayName: string | null) {
-  await Kinotic.members.addMember(email, displayName, true)
+  await Kinotic.members.addMember(email, displayName, true, INVITATION_EMAIL_TEMPLATE_ID)
   await load()
 }
 
 function resend(member: OrganizationMember) {
-  void act(member, () => Kinotic.members.sendInvitation(member.email), 'Could not resend the invitation.')
+  void act(member, () => Kinotic.members.sendInvitation(member.email, INVITATION_EMAIL_TEMPLATE_ID), 'Could not resend the invitation.')
 }
 
 function cancel(member: OrganizationMember) {

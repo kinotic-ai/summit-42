@@ -31,14 +31,16 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
 
 | Property | Environment variable | Value |
 |---|---|---|
-| `kinotic.domain.cors.allowedOriginPattern` | `KINOTIC_DOMAIN_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; sign-up emails, social sign-ups, invitation links and the GitHub install return to that origin |
+| `kinotic.domain.cors.allowedOriginPattern` | `KINOTIC_DOMAIN_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; social sign-ups and the GitHub install return to that origin |
 
-Kinotic sends invitations and sign-up verification emails in its own branding unless the UI's origin has templates
-of its own. Summit 42's are in [`email-templates/`](email-templates). Kinotic's migrations seed them for
-`http://localhost:5175` in a development stack, `https://dev-summit42.kinotic.ai` on the development server and
-`https://summit42.kinotic.ai` in production. For any other origin, add one template for each of `invitation` and `verification` on the system console's **Platform → Email
-templates** page with the UI's origin, the matching email, and the contents of `subject.txt`, `body.html` and
-`body.txt`. Kinotic's seeds are copies of these files, so an edit here is carried to them by hand.
+Summit 42 sends its invitations and sign-up verification emails with the Kinotic email templates
+`summit-42-invitation` and `summit-42-verification`, naming them in `MemberService.addMember`, `sendInvitation`,
+`inviteMember` and the sign-up request; their links open Summit 42. The sources are in
+[`email-templates/`](email-templates). Kinotic's migrations seed both with `http://localhost:5175` in a development
+stack and `https://dev-summit42.kinotic.ai` on the development server. Anywhere else, add them on the system console's
+**Platform → Email templates** page with those ids, the matching email, Summit 42's URL as the UI base URL, and the
+contents of `subject.txt`, `body.html` and `body.txt`. Kinotic's seeds are copies of these files, so an edit here is
+carried to them by hand.
 An invitation's link opens the UI's `/invite/accept` page, where the invitee sets a password or accepts through a
 sign-in provider; an invitation into one of the user's apps then sends them to that app's own sign-in page.
 

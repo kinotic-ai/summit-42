@@ -69,6 +69,7 @@ import type { ApplicationParticipantIdentity, PendingInviteSummary } from '@kino
 import AppIcon from '@/components/AppIcon.vue'
 import InviteDrawer from '@/components/InviteDrawer.vue'
 import type { BuilderApp } from '@/api/appBuilder'
+import { INVITATION_EMAIL_TEMPLATE_ID } from '@/api/auth'
 import { errorText, formatDate } from '@/api/format'
 
 /** The people who can sign in to an app, and the invitations they have not accepted yet. */
@@ -118,7 +119,7 @@ async function act(id: string, action: () => Promise<unknown>, fallback: string)
 }
 
 async function invite(email: string, displayName: string | null) {
-  await Kinotic.members.inviteMember(email, displayName, props.app.applicationId)
+  await Kinotic.members.inviteMember(email, displayName, props.app.applicationId, INVITATION_EMAIL_TEMPLATE_ID)
   await load()
 }
 
@@ -136,7 +137,7 @@ function remove(id: string, email: string) {
 function resend(pending: PendingInviteSummary) {
   void act(pending.id!, async () => {
     await Kinotic.members.cancelInvite(pending.id!)
-    await Kinotic.members.inviteMember(pending.email, pending.displayName, props.app.applicationId)
+    await Kinotic.members.inviteMember(pending.email, pending.displayName, props.app.applicationId, INVITATION_EMAIL_TEMPLATE_ID)
   }, 'Could not resend the invitation.')
 }
 
