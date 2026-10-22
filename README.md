@@ -29,9 +29,13 @@ deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, 
 
 ## Kinotic configuration
 
-Summit 42 runs Kinotic's domain and management-api modules, so it takes the settings the management server takes for
-them: the Elasticsearch connection, secret storage, email, platform secrets, and the GitHub App's private key and
-webhook secret. Its `application.yml` sets what is the same everywhere: the GitHub App's id, slug and repository
+Summit 42 runs Kinotic's domain and management-api modules and hosts the `management-api` zone, so it answers some of
+the cluster's management-api calls, the portal's included. It therefore takes every `kinotic.domain.*` and
+`kinotic.managementApi.*` setting the management server has, with the same values: among them the Elasticsearch
+connection, secret storage (the same backend, so a secret either server saves the other can read), email, platform
+secrets, the GitHub App's private key and webhook secret, `kinotic.domain.portalBaseUrl`,
+`kinotic.domain.appApiBaseUrl`, `kinotic.managementApi.apiBaseUrl`, and the Loki, Tempo and Mimir URLs. The
+`development` profile sets the values the management server's own `development` profile uses. Its `application.yml` sets what is the same everywhere: the GitHub App's id, slug and repository
 template, the OAuth clients kinotic-domain requires, and `kinotic.managementApi.disableMcpServer`, since Summit 42 has
 no API gateway. Its own settings are:
 

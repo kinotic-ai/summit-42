@@ -67,6 +67,15 @@ public class ConversationRepository {
                      .mapEmpty();
     }
 
+    /**
+     * Deletes the app's saved conversation, if it has one.
+     */
+    public Future<Void> deleteById(ApplicationKey applicationKey) {
+        return Future.fromCompletionStage(client.delete(delete -> delete.index(INDEX).id(idOf(applicationKey))),
+                                          vertx.getOrCreateContext())
+                     .mapEmpty();
+    }
+
     private static String idOf(ApplicationKey applicationKey) {
         return applicationKey.organizationId() + ":" + applicationKey.applicationId();
     }

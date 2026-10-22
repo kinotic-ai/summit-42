@@ -1,12 +1,20 @@
 # Summit 42 beside a local Kinotic stack (kinotic/deployment/docker-compose), as the management server's
 # development profile runs: Elasticsearch on localhost, in-memory secret storage, and email links logged rather than
 # sent.
+# Summit 42 hosts the management-api zone, so it also answers the stack's management-api calls; these mirror the
+# management server's development settings so either server answers them alike.
 kinotic:
   managementApi:
+    apiBaseUrl: http://localhost:5173
+    entityDefinition:
+      numberOfShards: 1
+      numberOfReplicas: 0
     github:
       webhookSecret: "-"
       appPrivateKey: "-"
   domain:
+    portalBaseUrl: http://localhost:5173
+    appApiBaseUrl: http://localhost:58505
     elastic-connections:
       - scheme: "http"
         host: "localhost"

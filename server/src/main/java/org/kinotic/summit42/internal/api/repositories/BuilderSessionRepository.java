@@ -34,6 +34,14 @@ public class BuilderSessionRepository {
     }
 
     /**
+     * Forgets the app's session and deletes its saved conversation.
+     */
+    public Future<Void> deleteById(ApplicationKey applicationKey) {
+        sessions.remove(applicationKey);
+        return conversationRepository.deleteById(applicationKey);
+    }
+
+    /**
      * Saves the session's conversation as it is now, once every earlier save of the session has completed.
      */
     public Future<Void> save(BuilderSession session) {

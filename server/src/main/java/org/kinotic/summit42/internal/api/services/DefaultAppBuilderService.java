@@ -108,6 +108,13 @@ public class DefaultAppBuilderService implements AppBuilderService {
         Application application = new Application(name.strip(), StringUtils.trimToNull(description))
                 .setOrganizationId(participant.getOrganizationId());
         return callAs(participant, () -> applicationService.createSync(application))
+                // an app deleted earlier under the same name had the same id, and its conversation is not this app's;
+                // one that cannot be deleted is logged rather than failing an app that was created
+                .compose(created -> sessionRepository.deleteById(new ApplicationKey(participant.getOrganizationId(), created.getId()))
+                                                     .onFailure(e -> log.error("The earlier conversation of app {} could not be deleted",
+                                                                               created.getId(), e))
+                                                     .otherwiseEmpty()
+                                                     .map(created))
                 .compose(created -> createProject(participant, created)
                         .compose(project -> buildable(participant, project))
                         .map(project -> new BuilderApp(created.getId(), created.getName(), created.getDescription(), null)));
@@ -132,27 +139,33 @@ public class DefaultAppBuilderService implements AppBuilderService {
 
     @Override
     public Future<Conversation> findConversation(String applicationId) {
-        return sessionRepository.findById(currentApplicationKey(applicationId)).map(session -> {
-            synchronized (session) {
-                return new Conversation().setMessages(new ArrayList<>(session.getConversation().getMessages()));
-            }
-        });
+        OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
+        return findProject(participant, applicationId)
+                .compose(project -> sessionRepository.findById(new ApplicationKey(participant.getOrganizationId(), applicationId)))
+                .map(session -> {
+                    synchronized (session) {
+                        return new Conversation().setMessages(new ArrayList<>(session.getConversation().getMessages()));
+                    }
+                });
     }
 
     @Override
     public Future<Void> resetConversation(String applicationId) {
-        return sessionRepository.findById(currentApplicationKey(applicationId)).compose(session -> {
-            Future<Void> ret;
-            synchronized (session) {
-                if (session.isTurnRunning()) {
-                    ret = Future.failedFuture(new IllegalStateException(TURN_RUNNING + "; reset the conversation once it is done"));
-                } else {
-                    session.getConversation().getMessages().clear();
-                    ret = sessionRepository.save(session);
-                }
-            }
-            return ret;
-        });
+        OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
+        return findProject(participant, applicationId)
+                .compose(project -> sessionRepository.findById(new ApplicationKey(participant.getOrganizationId(), applicationId)))
+                .compose(session -> {
+                    Future<Void> ret;
+                    synchronized (session) {
+                        if (session.isTurnRunning()) {
+                            ret = Future.failedFuture(new IllegalStateException(TURN_RUNNING + "; reset the conversation once it is done"));
+                        } else {
+                            session.getConversation().getMessages().clear();
+                            ret = sessionRepository.save(session);
+                        }
+                    }
+                    return ret;
+                });
     }
 
     private Flux<BuildEvent> startTurn(OrganizationParticipant participant, BuilderSession session, Project project,
@@ -225,10 +238,6 @@ public class DefaultAppBuilderService implements AppBuilderService {
                          .onFailure(e -> log.error("The conversation of app {} could not be saved", session.getApplicationKey(), e));
     }
 
-    private ApplicationKey currentApplicationKey(String applicationId) {
-        OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
-        return new ApplicationKey(participant.getOrganizationId(), applicationId);
-    }
 
     // an application whose project could not be created is deleted, so its name can be used again
     private Future<Project> createProject(OrganizationParticipant participant, Application application) {
@@ -253,12 +262,17 @@ public class DefaultAppBuilderService implements AppBuilderService {
     // the app's project once it can be built in; fails with BuildUnavailableException when the organization has no
     // such app or its repository cannot be used
     private Future<Project> findBuildableProject(OrganizationParticipant participant, String applicationId) {
+        return findProject(participant, applicationId).compose(project -> buildable(participant, project));
+    }
+
+    // the app's project, failing for an id that names no app of the organization
+    private Future<Project> findProject(OrganizationParticipant participant, String applicationId) {
         return callAs(participant, () -> projectService.findAllForApplication(applicationId, Pageable.ofSize(1)))
-                .compose(page -> {
+                .map(page -> {
                     if (page.getContent().isEmpty()) {
                         throw new BuildUnavailableException("This app no longer exists");
                     }
-                    return buildable(participant, page.getContent().getFirst());
+                    return page.getContent().getFirst();
                 });
     }
 
