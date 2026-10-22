@@ -49,6 +49,11 @@ public class FakeKinoticConfiguration {
     }
 
     @Bean
+    public FakeSystemMemberInvitationService fakeSystemMemberInvitationService(SecurityContext securityContext) {
+        return new FakeSystemMemberInvitationService(securityContext);
+    }
+
+    @Bean
     public FakeAnthropic fakeAnthropic(Vertx vertx) {
         return new FakeAnthropic(vertx);
     }

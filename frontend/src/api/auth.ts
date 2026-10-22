@@ -68,7 +68,11 @@ async function readError(res: Response, fallback: string): Promise<string> {
 }
 
 async function postJson(path: string, body: unknown, fallbackError: string): Promise<Response> {
-    const res = await fetch(apiUrl(path), {
+    return postJsonTo(apiUrl(path), body, fallbackError)
+}
+
+async function postJsonTo(url: string, body: unknown, fallbackError: string): Promise<Response> {
+    const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -173,16 +177,9 @@ export function socialSignupUrl(provider: string): string {
     return apiUrl('/api/auth/org/signup/social/start/' + encodeURIComponent(provider))
 }
 
-/**
- * The Kinotic email templates Summit 42 sends its invitations and sign-up verifications with, whose links open this
- * UI; Kinotic's migrations seed them for each environment that serves Summit 42.
- */
-export const INVITATION_EMAIL_TEMPLATE_ID = 'summit-42-invitation'
-const VERIFICATION_EMAIL_TEMPLATE_ID = 'summit-42-verification'
-
-/** Starts an email sign-up: the gateway emails a link to this UI's /signup/verify?token=... */
+/** Starts an email sign-up through the Summit 42 server, which emails a link to this UI's /signup/verify?token=... */
 export async function signUp(email: string, displayName: string): Promise<void> {
-    await postJson('/api/auth/org/signup', { email, displayName, emailTemplateId: VERIFICATION_EMAIL_TEMPLATE_ID }, 'Sign-up failed')
+    await postJsonTo('/api/signup', { email, displayName }, 'Sign-up failed')
 }
 
 /** Finishes an email sign-up, creating the workspace and the account's password, and establishes the session. */

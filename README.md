@@ -8,7 +8,7 @@ deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, 
 
 | Path | What it is |
 |---|---|
-| `server/` | A Spring Boot member of the Kinotic cluster. It hosts `AppBuilderService` in Kinotic's `management-api` zone and serves the UI on port 8080. |
+| `server/` | A Spring Boot member of the Kinotic cluster. It hosts `AppBuilderService` and `InvitationService` in Kinotic's `management-api` zone, and serves the UI and its email sign-up route, `POST /api/signup`, on port 8080. |
 | `frontend/` | The Vue UI. It signs in to the Kinotic management gateway and chats with `AppBuilderService` over that gateway's STOMP connection. See [frontend/README.md](frontend/README.md). |
 
 ## How it works
@@ -23,6 +23,7 @@ deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, 
 - **The model.** It comes from the platform's LLM configuration named by `summit42.llmConfigurationName` (default `summit-42`). Add that configuration on the system console's **Platform → LLM configurations** page. Summit 42 reads the configuration and its API key as itself, through `SecurityContext.callWithoutParticipant`, since Kinotic gives the key to no call made for a user.
 - **Repositories.** Each app's repository lives in the user's own GitHub account, through the Kinotic GitHub App. The workspace asks the user to connect GitHub before the first app: it starts Kinotic's install with `<UI origin>/github/callback` as the return URL, GitHub returns to the management server, which forwards the browser there with GitHub's `installation_id`, `state` and `code`, and that page finishes the link with `GitHubAppInstallationService.completeInstall`. A signed-out browser signs in first and comes back to the callback. Claude writes the repository with a short-lived token from Kinotic's `ProjectRepoCredentialService`.
 - **Managing apps.** Beside the chat, the UI calls Kinotic's management and persistence services itself, as the signed-in user: workspace members and their invitations (accepted on the UI's own `/invite/accept` page), each app's users, its data, its deployments and history, renaming and deleting it, and the GitHub link. Kinotic scopes each call to the user's organization.
+- **Invitations and sign-up.** Only a cluster member's own code may choose which Kinotic email template an email is sent with, so Summit 42 sends its invitations and sign-up verifications itself, with its own templates. The UI sends invitations through `InvitationService`, which calls Kinotic's `SystemMemberInvitationService` as itself and names the signed-in user as the inviter. An email sign-up posts to the server's `POST /api/signup`, which calls `SystemSignUpService` the same way. Completing a sign-up, and everything else about members, goes to Kinotic directly.
 - **Conversations.** Each app has its own, held in the server's memory, so a restart starts them over. The apps themselves live in Kinotic, so the list of apps survives a restart. One turn of an app runs at a time, and its conversation cannot be reset while it runs.
 
 ## Kinotic configuration
@@ -34,8 +35,8 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
 | `kinotic.domain.cors.allowedOriginPattern` | `KINOTIC_DOMAIN_CORS_ALLOWEDORIGINPATTERN` | the server's own pattern plus the UI's origin, such as `http://localhost:(5173\|5175\|9090)` locally or `https://(dev-portal\.kinotic\.ai\|dev-summit42\.kinotic\.ai)` on the development server; social sign-ups and the GitHub install return to that origin |
 
 Summit 42 sends its invitations and sign-up verification emails with the Kinotic email templates
-`summit-42-invitation` and `summit-42-verification`, naming them in `MemberService.addMember`, `sendInvitation`,
-`inviteMember` and the sign-up request; their links open Summit 42. The sources are in
+`summit-42-invitation` and `summit-42-verification`, naming them in its calls to `SystemMemberInvitationService` and
+`SystemSignUpService`; their links open Summit 42. The sources are in
 [`email-templates/`](email-templates). Kinotic's migrations seed both with `http://localhost:5175` in a development
 stack and `https://dev-summit42.kinotic.ai` on the development server. Anywhere else, add them on the system console's
 **Platform → Email templates** page with those ids, the matching email, Summit 42's URL as the UI base URL, and the

@@ -16,7 +16,8 @@ bun run dev          # http://localhost:5175
 ```
 
 The management server must admit `http://localhost:5175` in its CORS pattern, as the
-root [README](../README.md#kinotic-configuration) shows. With the email service disabled locally, the sign-up
+root [README](../README.md#kinotic-configuration) shows. The dev server forwards `POST /api/signup` to the Summit 42
+server on `localhost:8080`. With the email service disabled locally, the sign-up
 verification link is printed in the management server's log.
 
 ## Configuration

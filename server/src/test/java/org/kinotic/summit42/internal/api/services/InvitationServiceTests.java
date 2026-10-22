@@ -1,0 +1,99 @@
+package org.kinotic.summit42.internal.api.services;
+
+import io.vertx.core.Future;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.kinotic.core.api.exceptions.AuthorizationException;
+import org.kinotic.core.api.security.Participant;
+import org.kinotic.core.api.security.SecurityContext;
+import org.kinotic.domain.api.model.security.Inviter;
+import org.kinotic.domain.api.model.security.OrganizationMember;
+import org.kinotic.domain.api.model.security.participant.DefaultOrganizationParticipant;
+import org.kinotic.domain.api.model.security.participant.DefaultSystemParticipant;
+import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
+import org.kinotic.management.api.model.PendingInviteSummary;
+import org.kinotic.summit42.fakes.FakeKinoticConfiguration;
+import org.kinotic.summit42.fakes.FakeSystemMemberInvitationService;
+import org.kinotic.summit42.fakes.SentInvitation;
+import org.kinotic.summit42.internal.api.proxies.InvitationServiceProxy;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
+/**
+ * Calls Summit 42's {@code InvitationService} over Kinotic RPC as the management gateway would for a signed-in user,
+ * against a fake of the system server's {@code SystemMemberInvitationService}, which refuses a call made for a
+ * participant as the real one does.
+ */
+@SpringBootTest
+@ActiveProfiles({"test"})
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Import(FakeKinoticConfiguration.class)
+public class InvitationServiceTests {
+
+    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection") // Kinotic wires the proxy
+    @Autowired
+    private InvitationServiceProxy invitationService;
+    @Autowired
+    private SecurityContext securityContext;
+    @Autowired
+    private FakeSystemMemberInvitationService systemInvitations;
+
+    @Test
+    public void testInvitationsAreSentInTheUsersNameWithSummit42sTemplate() throws Exception {
+        String organizationId = "org-" + UUID.randomUUID();
+        OrganizationParticipant user = DefaultOrganizationParticipant.builder()
+                                                                     .id("ivy@" + organizationId)
+                                                                     .organizationId(organizationId)
+                                                                     .metadata(Map.of("displayName", "Ivy Inviter"))
+                                                                     .roles(List.of())
+                                                                     .build();
+        Inviter inviter = new Inviter(organizationId, user.getId(), "Ivy Inviter");
+
+        OrganizationMember member = await(callAs(user, service -> service.addMember("pat@example.test", "Pat")));
+        Assertions.assertEquals("pat@example.test", member.email());
+        await(callAs(user, service -> service.sendInvitation("pat@example.test")));
+        PendingInviteSummary invite = await(callAs(user, service -> service.inviteMember("sam@example.test", "Sam", "todo")));
+        Assertions.assertEquals("sam@example.test", invite.getEmail());
+
+        List<SentInvitation> sent = systemInvitations.sent().stream()
+                                                     .filter(invitation -> invitation.inviter().organizationId().equals(organizationId))
+                                                     .toList();
+        Assertions.assertEquals(List.of(new SentInvitation(inviter, "pat@example.test", "Pat", null, "summit-42-invitation"),
+                                        new SentInvitation(inviter, "pat@example.test", null, null, "summit-42-invitation"),
+                                        new SentInvitation(inviter, "sam@example.test", "Sam", "todo", "summit-42-invitation")),
+                                sent);
+    }
+
+    @Test
+    public void testACallerThatIsNotAnOrganizationParticipantIsRefused() {
+        Participant system = DefaultSystemParticipant.builder()
+                                                     .id("system-" + UUID.randomUUID())
+                                                     .metadata(Map.of())
+                                                     .roles(List.of())
+                                                     .build();
+
+        ExecutionException e = Assertions.assertThrows(ExecutionException.class,
+                                                       () -> await(callAs(system, service -> service.addMember("pat@example.test", null))));
+        Assertions.assertInstanceOf(AuthorizationException.class, e.getCause());
+    }
+
+    // the proxy sends a call as the participant bound to the context it is invoked on
+    private <T> CompletableFuture<T> callAs(Participant participant, Function<InvitationServiceProxy, Future<T>> call) {
+        return securityContext.callAs(participant, () -> call.apply(invitationService).toCompletionStage());
+    }
+
+    private static <T> T await(CompletableFuture<T> future) throws Exception {
+        return future.get(30, TimeUnit.SECONDS);
+    }
+}
