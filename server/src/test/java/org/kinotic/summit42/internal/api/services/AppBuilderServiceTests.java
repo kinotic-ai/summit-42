@@ -3,7 +3,6 @@ package org.kinotic.summit42.internal.api.services;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.kinotic.core.api.exceptions.AuthorizationException;
-import org.kinotic.core.api.exceptions.RpcMissingServiceException;
 import org.kinotic.core.api.security.Participant;
 import org.kinotic.domain.api.model.ApplicationKey;
 import org.kinotic.domain.api.model.security.participant.DefaultSystemParticipant;
@@ -25,10 +24,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 /**
- * Covers what {@code AppBuilderService} does when the Kinotic services it calls cannot be reached: the cluster runs
- * none of them, as when the management and system servers are down. A conversation a test needs is placed in
- * {@link BuilderSessionRepository}, since a chat turn that would record one needs the app's project and the
- * platform's LLM.
+ * Covers who may call {@code AppBuilderService} and what it does with an app's conversation. A conversation a test
+ * needs is placed in {@link BuilderSessionRepository}, since a chat turn that would record one needs the app's project
+ * and the platform's LLM.
  */
 public class AppBuilderServiceTests extends AppBuilderServiceTestBase {
 
@@ -62,32 +60,6 @@ public class AppBuilderServiceTests extends AppBuilderServiceTestBase {
                     })
                     .expectComplete()
                     .verify(TIMEOUT);
-    }
-
-    @Test
-    public void testChatEndsWithAnErrorEventWhenTheAppsProjectCannotBeLookedUp() throws Exception {
-        OrganizationParticipant participant = newOrganizationParticipant();
-        String applicationId = "app";
-
-        StepVerifier.create(chatAs(participant, applicationId, "Build a todo app"))
-                    .assertNext(event -> {
-                        Assertions.assertEquals(BuildEventType.ERROR, event.getType());
-                        Assertions.assertEquals("Something went wrong. Please try again.", event.getText());
-                    })
-                    .expectComplete()
-                    .verify(TIMEOUT);
-
-        // the turn never started, so the message is not part of the conversation
-        Conversation conversation = await(callAs(participant, service -> service.findConversation(applicationId)));
-        Assertions.assertTrue(conversation.getMessages().isEmpty());
-    }
-
-    @Test
-    public void testFindAppsFailsWhenTheOrganizationsAppsCannotBeLookedUp() {
-        CompletableFuture<?> apps = callAs(newOrganizationParticipant(), AppBuilderServiceProxy::findApps);
-
-        ExecutionException e = Assertions.assertThrows(ExecutionException.class, () -> await(apps));
-        Assertions.assertInstanceOf(RpcMissingServiceException.class, e.getCause());
     }
 
     @Test
@@ -170,8 +142,8 @@ public class AppBuilderServiceTests extends AppBuilderServiceTestBase {
 
     // the app's session with one exchange in its conversation
     private BuilderSession sessionOf(OrganizationParticipant participant, String applicationId) {
-        BuilderSession ret = sessionRepository.findOrCreate(new ApplicationKey(participant.getOrganizationId(),
-                                                                               applicationId));
+        BuilderSession ret = sessionRepository.findById(new ApplicationKey(participant.getOrganizationId(), applicationId))
+                                              .toCompletionStage().toCompletableFuture().join();
         ret.getConversation().getMessages().add(new ChatMessage(ChatRole.USER, "Build a todo app"));
         ret.getConversation().getMessages().add(new ChatMessage(ChatRole.ASSISTANT, "Your todo app is ready"));
         return ret;

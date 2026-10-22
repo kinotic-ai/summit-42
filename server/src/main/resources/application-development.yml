@@ -1,0 +1,32 @@
+# Summit 42 beside a local Kinotic stack (kinotic/deployment/docker-compose), as the management server's
+# development profile runs: Elasticsearch on localhost, in-memory secret storage, and email links logged rather than
+# sent.
+kinotic:
+  managementApi:
+    github:
+      webhookSecret: "-"
+      appPrivateKey: "-"
+  domain:
+    elastic-connections:
+      - scheme: "http"
+        host: "localhost"
+        port: "9200"
+    email:
+      enabled: false
+    secretStorage:
+      backend: IN_MEMORY
+      # The development master key the management server's development profile uses
+      masterKey: 0qWH2oHEp27LLD7iBHEiABqJFf1q5GRYK6OdMc5Wdv4=
+  platformSecrets:
+    generateMissing: true
+    jwtSigningKeysPath: ${user.home}/.kinotic/dev-platform-secrets/jwt-signing-keys
+
+summit42:
+  # The UI's vite dev server
+  uiBaseUrl: http://localhost:5175
+
+spring:
+  config:
+    # The developer's GitHub App, written by kinotic's dev-tools/github-app/dev-github-app.ts create for the
+    # management server
+    import: optional:file:${user.home}/.kinotic/dev-environment/kinotic-server-management/application.yml

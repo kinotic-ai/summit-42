@@ -24,16 +24,15 @@ import org.kinotic.summit42.api.model.ChatRole;
 import org.kinotic.summit42.api.model.Conversation;
 import org.kinotic.summit42.fakes.FakeAnthropic;
 import org.kinotic.summit42.fakes.FakeApplicationService;
-import org.kinotic.summit42.fakes.FakeKinoticConfiguration;
 import org.kinotic.summit42.fakes.FakeLlmConfigurationService;
 import org.kinotic.summit42.fakes.FakeProjectService;
 import org.kinotic.summit42.fakes.FakeUiDeploymentService;
 import org.kinotic.summit42.internal.api.repositories.BuilderSession;
 import org.kinotic.summit42.internal.api.repositories.BuilderSessionRepository;
+import org.kinotic.summit42.internal.api.repositories.ConversationRepository;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
 import org.kinotic.system.api.model.llm.LlmProviderType;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Import;
 
 import java.util.Date;
 import java.util.List;
@@ -41,10 +40,9 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.IntStream;
 
 /**
- * Covers the app builder's flows against fakes of the Kinotic services it calls, published on Summit 42's own node and
- * called over Kinotic RPC, and a fake of Anthropic's API the platform's LLM configuration points at.
+ * Covers the app builder's flows against fakes of the Kinotic services it calls, and a fake of Anthropic's API the
+ * platform's LLM configuration points at.
  */
-@Import(FakeKinoticConfiguration.class)
 public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
 
     private static final String COMMIT = "c0ffee";
@@ -61,6 +59,8 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     private FakeAnthropic anthropic;
     @Autowired
     private BuilderSessionRepository sessionRepository;
+    @Autowired
+    private ConversationRepository conversationRepository;
     @Autowired
     private Summit42Properties properties;
 
@@ -222,6 +222,14 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         Assertions.assertEquals(List.of("Build a todo app", "Your todo app is ready"),
                                 conversation.getMessages().stream().map(ChatMessage::getText).toList());
         Assertions.assertFalse(sessionOf("todo").isTurnRunning());
+        // saved, so the conversation outlives the server
+        await(sessionOf("todo").getLastSave().toCompletionStage().toCompletableFuture());
+        Conversation saved = await(conversationRepository.findById(new ApplicationKey(organizationId(), "todo"))
+                                                         .toCompletionStage().toCompletableFuture());
+        Assertions.assertEquals(List.of(ChatRole.USER, ChatRole.ASSISTANT),
+                                saved.getMessages().stream().map(ChatMessage::getRole).toList());
+        Assertions.assertEquals(List.of("Build a todo app", "Your todo app is ready"),
+                                saved.getMessages().stream().map(ChatMessage::getText).toList());
         String system = systemOf(anthropic.requests().getFirst());
         Assertions.assertTrue(system.contains("The user named this app 'Todo' and described it as: Tracks my chores."), system);
         Assertions.assertEquals(List.of("Build a todo app"), textsOf(anthropic.requests().getFirst()));
@@ -313,7 +321,8 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     private BuilderSession sessionOf(String applicationId) {
-        return sessionRepository.findOrCreate(new ApplicationKey(organizationId(), applicationId));
+        return sessionRepository.findById(new ApplicationKey(organizationId(), applicationId))
+                                .toCompletionStage().toCompletableFuture().join();
     }
 
     private List<BuildEvent> chat(String applicationId, String message) {

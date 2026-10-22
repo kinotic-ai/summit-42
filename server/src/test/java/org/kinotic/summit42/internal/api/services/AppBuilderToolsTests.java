@@ -4,12 +4,16 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.kinotic.domain.api.model.ApplicationKey;
 import org.kinotic.domain.api.model.security.participant.DefaultOrganizationParticipant;
+import org.kinotic.summit42.api.model.Conversation;
 import org.kinotic.summit42.internal.api.repositories.BuilderSession;
 import org.springframework.ai.chat.model.ToolContext;
+import org.kinotic.summit42.fakes.FakeKinoticConfiguration;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.Map;
 
@@ -19,8 +23,10 @@ import java.util.Map;
  * Ignite node at a time.
  */
 @SpringBootTest
+@Import(FakeKinoticConfiguration.class)
 @ActiveProfiles({"test"})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Testcontainers(disabledWithoutDocker = true)
 public class AppBuilderToolsTests {
 
     @Autowired
@@ -57,7 +63,7 @@ public class AppBuilderToolsTests {
     }
 
     private static BuilderTurn newTurn() {
-        BuilderSession session = new BuilderSession(new ApplicationKey("org", "app")).setTurnRunning(true);
+        BuilderSession session = new BuilderSession(new ApplicationKey("org", "app"), new Conversation()).setTurnRunning(true);
         return new BuilderTurn(new DefaultOrganizationParticipant("user", "org", null, null), session, "project", event -> {});
     }
 

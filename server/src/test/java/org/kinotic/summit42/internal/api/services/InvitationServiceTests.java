@@ -6,14 +6,13 @@ import org.junit.jupiter.api.Test;
 import org.kinotic.core.api.exceptions.AuthorizationException;
 import org.kinotic.core.api.security.Participant;
 import org.kinotic.core.api.security.SecurityContext;
-import org.kinotic.domain.api.model.security.Inviter;
 import org.kinotic.domain.api.model.security.OrganizationMember;
 import org.kinotic.domain.api.model.security.participant.DefaultOrganizationParticipant;
 import org.kinotic.domain.api.model.security.participant.DefaultSystemParticipant;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
 import org.kinotic.management.api.model.PendingInviteSummary;
 import org.kinotic.summit42.fakes.FakeKinoticConfiguration;
-import org.kinotic.summit42.fakes.FakeSystemMemberInvitationService;
+import org.kinotic.summit42.fakes.FakeMemberInvitationService;
 import org.kinotic.summit42.fakes.SentInvitation;
 import org.kinotic.summit42.internal.api.proxies.InvitationServiceProxy;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.Map;
@@ -32,12 +32,13 @@ import java.util.function.Function;
 
 /**
  * Calls Summit 42's {@code InvitationService} over Kinotic RPC as the management gateway would for a signed-in user,
- * against a fake of the system server's {@code SystemMemberInvitationService}, which refuses a call made for a
+ * against a fake of Kinotic's {@code MemberInvitationService}, which refuses a caller that is not an organization
  * participant as the real one does.
  */
 @SpringBootTest
 @ActiveProfiles({"test"})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Testcontainers(disabledWithoutDocker = true)
 @Import(FakeKinoticConfiguration.class)
 public class InvitationServiceTests {
 
@@ -47,7 +48,9 @@ public class InvitationServiceTests {
     @Autowired
     private SecurityContext securityContext;
     @Autowired
-    private FakeSystemMemberInvitationService systemInvitations;
+    private FakeMemberInvitationService memberInvitations;
+    @Autowired
+    private Summit42EmailTemplates emailTemplates;
 
     @Test
     public void testInvitationsAreSentInTheUsersNameWithSummit42sTemplate() throws Exception {
@@ -58,7 +61,6 @@ public class InvitationServiceTests {
                                                                      .metadata(Map.of("displayName", "Ivy Inviter"))
                                                                      .roles(List.of())
                                                                      .build();
-        Inviter inviter = new Inviter(organizationId, user.getId(), "Ivy Inviter");
 
         OrganizationMember member = await(callAs(user, service -> service.addMember("pat@example.test", "Pat")));
         Assertions.assertEquals("pat@example.test", member.email());
@@ -66,13 +68,14 @@ public class InvitationServiceTests {
         PendingInviteSummary invite = await(callAs(user, service -> service.inviteMember("sam@example.test", "Sam", "todo")));
         Assertions.assertEquals("sam@example.test", invite.getEmail());
 
-        List<SentInvitation> sent = systemInvitations.sent().stream()
-                                                     .filter(invitation -> invitation.inviter().organizationId().equals(organizationId))
+        List<SentInvitation> sent = memberInvitations.sent().stream()
+                                                     .filter(invitation -> invitation.organizationId().equals(organizationId))
                                                      .toList();
-        Assertions.assertEquals(List.of(new SentInvitation(inviter, "pat@example.test", "Pat", null, "summit-42-invitation"),
-                                        new SentInvitation(inviter, "pat@example.test", null, null, "summit-42-invitation"),
-                                        new SentInvitation(inviter, "sam@example.test", "Sam", "todo", "summit-42-invitation")),
+        Assertions.assertEquals(List.of(sentBy(user, "pat@example.test", "Pat", null),
+                                        sentBy(user, "pat@example.test", null, null),
+                                        sentBy(user, "sam@example.test", "Sam", "todo")),
                                 sent);
+        Assertions.assertEquals("https://summit42.example.test", emailTemplates.getInvitation().getUiBaseUrl());
     }
 
     @Test
@@ -86,6 +89,11 @@ public class InvitationServiceTests {
         ExecutionException e = Assertions.assertThrows(ExecutionException.class,
                                                        () -> await(callAs(system, service -> service.addMember("pat@example.test", null))));
         Assertions.assertInstanceOf(AuthorizationException.class, e.getCause());
+    }
+
+    private SentInvitation sentBy(OrganizationParticipant user, String email, String displayName, String applicationId) {
+        return new SentInvitation(user.getOrganizationId(), user.getId(), email, displayName, applicationId,
+                                  emailTemplates.getInvitation());
     }
 
     // the proxy sends a call as the participant bound to the context it is invoked on

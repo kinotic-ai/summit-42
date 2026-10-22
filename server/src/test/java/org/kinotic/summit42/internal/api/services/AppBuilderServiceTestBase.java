@@ -6,11 +6,14 @@ import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.domain.api.model.security.participant.DefaultOrganizationParticipant;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
 import org.kinotic.summit42.api.model.BuildEvent;
+import org.kinotic.summit42.fakes.FakeKinoticConfiguration;
 import org.kinotic.summit42.internal.api.proxies.AppBuilderServiceProxy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -23,13 +26,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 /**
- * Boots Summit 42 as a member of a cluster of its own and calls its {@code AppBuilderService} over Kinotic RPC,
- * sending each call as the participant the management gateway would deliver. Each test class gets a context of its
- * own, since the JVM runs one Ignite node at a time.
+ * Boots Summit 42 as a member of a cluster of its own, with the fakes {@link FakeKinoticConfiguration} gives it, and
+ * calls its {@code AppBuilderService} over Kinotic RPC, sending each call as the participant the management gateway
+ * would deliver. Each test class gets a context of its own, since the JVM runs one Ignite node at a time. Skipped
+ * without Docker, which runs the tests' Elasticsearch.
  */
 @SpringBootTest
 @ActiveProfiles({"test"})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Import(FakeKinoticConfiguration.class)
+@Testcontainers(disabledWithoutDocker = true)
 public abstract class AppBuilderServiceTestBase {
 
     protected static final Duration TIMEOUT = Duration.ofSeconds(30);

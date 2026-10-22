@@ -5,6 +5,7 @@ import org.kinotic.core.api.crud.Page;
 import org.kinotic.core.api.crud.Pageable;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.domain.api.model.Application;
+import org.kinotic.management.api.services.ApplicationService;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -15,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Holds each organization's applications in memory, answering them in the order they were added.
  */
-public class FakeApplicationService extends FakeOrganizationService implements PublishedApplicationService {
+public abstract class FakeApplicationService extends FakeOrganizationService implements ApplicationService {
 
     // organization id -> application id -> application, in the order added
     private final Map<String, Map<String, Application>> applications = new ConcurrentHashMap<>();

@@ -6,12 +6,14 @@ import io.vertx.core.http.HttpServer;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.healthchecks.HealthCheckHandler;
+import io.vertx.ext.healthchecks.HealthChecks;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.StaticHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.kinotic.core.api.security.SecurityContext;
-import org.kinotic.summit42.internal.api.proxies.SystemSignUpServiceProxy;
+import org.kinotic.domain.api.services.security.SignUpService;
+import org.kinotic.summit42.internal.api.services.Summit42EmailTemplates;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -20,7 +22,7 @@ import org.springframework.stereotype.Component;
  * Serves the Summit 42 UI from the jar's {@code webroot}, answering every path that is not a file with
  * {@code index.html} so the UI's own router handles it. {@code POST /api/signup} with {@code {email, displayName}}
  * starts an email sign-up, emailing a link to this UI's {@code /signup/verify} page, and answers 200, or 400 with
- * {@code {error}}.
+ * {@code {error}}. {@code GET /health} answers 200 while every registered health check passes, and 503 otherwise.
  */
 @Slf4j
 @Component
@@ -31,18 +33,17 @@ public class UiWebServer {
 
     private static final String SIGN_UP_PATH = "/api/signup";
     private static final String WEBROOT = "webroot";
-    // Kinotic's migrations seed it for each environment that serves Summit 42, with this UI's link base
-    private static final String VERIFICATION_EMAIL_TEMPLATE_ID = "summit-42-verification";
     private static final long SIGN_UP_BODY_LIMIT = 16 * 1024;
 
     private final Vertx vertx;
-    private final SecurityContext securityContext;
-    private final SystemSignUpServiceProxy systemSignUps;
+    private final HealthChecks healthChecks;
+    private final SignUpService signUpService;
+    private final Summit42EmailTemplates emailTemplates;
 
     @EventListener(ApplicationReadyEvent.class)
     public void start() {
         Router router = Router.router(vertx);
-        router.get("/health").handler(ctx -> ctx.response().end("OK"));
+        router.get("/health").handler(HealthCheckHandler.createWithHealthChecks(healthChecks));
         router.post(SIGN_UP_PATH)
               .handler(BodyHandler.create().setBodyLimit(SIGN_UP_BODY_LIMIT))
               .handler(this::handleSignUp);
@@ -69,11 +70,9 @@ public class UiWebServer {
         }
         String email = body.getString("email");
         String displayName = body.getString("displayName");
-        // nobody is signed in yet, so Summit 42 starts the sign-up as itself, which the system service requires
-        Future.fromCompletionStage(securityContext.callWithoutParticipant(
-                      () -> systemSignUps.initiateLocalSignUp(email, displayName, VERIFICATION_EMAIL_TEMPLATE_ID)
-                                         .toCompletionStage()),
-                                   vertx.getOrCreateContext())
+        // composed on a succeeded future, so a request the sign-up rejects as it is called fails it too
+        Future.succeededFuture()
+              .compose(v -> signUpService.initiateLocalSignUp(email, displayName, emailTemplates.getVerification()))
               .onSuccess(v -> respond(ctx, 200, new JsonObject().put("message", "Verification email sent. Please check your inbox.")))
               .onFailure(e -> {
                   log.warn("Sign-up failed: {}", e.getMessage());
