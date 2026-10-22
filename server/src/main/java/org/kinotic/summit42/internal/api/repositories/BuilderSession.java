@@ -37,6 +37,12 @@ public class BuilderSession {
     private boolean turnRunning;
 
     /**
+     * Whether the session's app was deleted, after which the session's conversation is not saved and its turn's tools
+     * do not run.
+     */
+    private boolean deleted;
+
+    /**
      * The most recent save of the conversation, which the next save waits for so the saves complete in order.
      */
     private Future<Void> lastSave = Future.succeededFuture();

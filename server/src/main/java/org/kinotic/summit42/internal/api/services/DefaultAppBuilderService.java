@@ -37,6 +37,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.util.function.Tuples;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -129,8 +130,10 @@ public class DefaultAppBuilderService implements AppBuilderService {
             ret = Flux.just(BuildEvent.error("The message is empty"));
         } else {
             // the turn takes the session when the stream is subscribed, so a stream never subscribed holds nothing
-            ret = Mono.fromCompletionStage(() -> findBuildableProject(participant, applicationId).toCompletionStage())
-                      .zipWith(Mono.fromCompletionStage(() -> sessionRepository.findById(applicationKey).toCompletionStage()))
+            ret = Mono.fromCompletionStage(() -> findBuildableProject(participant, applicationId)
+                              .compose(project -> sessionRepository.findById(applicationKey)
+                                                                   .map(session -> Tuples.of(project, session)))
+                              .toCompletionStage())
                       .flatMapMany(found -> startTurn(participant, found.getT2(), found.getT1(), message))
                       .onErrorResume(e -> failure(applicationKey, e));
         }

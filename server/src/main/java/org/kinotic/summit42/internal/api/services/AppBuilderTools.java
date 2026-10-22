@@ -272,6 +272,10 @@ public class AppBuilderTools {
         BuilderTurn turn = (BuilderTurn) toolContext.getContext().get(TURN);
         Validate.validState(turn.hold(), "The turn has ended");
         try {
+            synchronized (turn.getSession()) {
+                // the app was deleted, and one created again under its name has the same project id
+                Validate.validState(!turn.getSession().isDeleted(), "The app was deleted");
+            }
             return work.apply(turn);
         } finally {
             turn.release();
