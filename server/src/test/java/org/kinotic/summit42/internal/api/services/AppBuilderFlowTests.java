@@ -36,11 +36,15 @@ import org.kinotic.summit42.internal.api.repositories.ConversationRepository;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
 import org.kinotic.system.api.model.llm.LlmProviderType;
 import org.springframework.beans.factory.annotation.Autowired;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
 import java.util.stream.IntStream;
 
 /**
@@ -275,6 +279,39 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     @Test
+    public void testATurnRunsToItsEndAfterItsChatGoesAwayAndIsFollowedFromItsFirstEvent() throws Exception {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        anthropic.replyWithTextAfterPause("Writing your files", Duration.ofSeconds(3), ", done");
+
+        // the chat that sent the message goes away after the first chunk
+        BuildEvent first = chatAs(participant, "todo", "Build a todo app").blockFirst(TIMEOUT);
+        Assertions.assertEquals("Writing your files", first.getText());
+
+        List<BuildEvent> followed = followAs("todo").collectList().block(TIMEOUT);
+        Conversation conversation = await(callAs(participant, service -> service.findConversation("todo")));
+
+        Assertions.assertEquals(List.of("Writing your files", ", done"), followed.stream().map(BuildEvent::getText).toList());
+        Assertions.assertEquals(first.getTimestamp(), followed.getFirst().getTimestamp());
+        Assertions.assertEquals(List.of("Build a todo app", "Writing your files, done"),
+                                conversation.getMessages().stream().map(ChatMessage::getText).toList());
+        Assertions.assertFalse(sessionOf("todo").isTurnRunning());
+    }
+
+    @Test
+    public void testFollowRunningTurnCompletesAtOnceWhenNoTurnRuns() {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        anthropic.replyWithText("Done");
+        chat("todo", "Build a todo app");
+
+        Assertions.assertEquals(List.of(), followAs("todo").collectList().block(TIMEOUT));
+    }
+
+    @Test
+    public void testFollowRunningTurnOfAnAppThatNoLongerExistsAnswersWithAnError() {
+        Assertions.assertEquals(List.of("This app no longer exists"), errorsOf(followAs("gone").collectList().block(TIMEOUT)));
+    }
+
+    @Test
     public void testChatSendsTheMostRecentMessagesStartingWithAUserMessage() {
         projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
         List<ChatMessage> history = sessionOf("todo").getConversation().getMessages();
@@ -418,6 +455,14 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
 
     private List<BuildEvent> chat(String applicationId, String message) {
         return chatAs(participant, applicationId, message).collectList().block(TIMEOUT);
+    }
+
+    // the stream's request carries the participant bound when followRunningTurn is invoked, and is sent on subscription
+    private Flux<BuildEvent> followAs(String applicationId) {
+        return Mono.fromCompletionStage(securityContext.callAs(participant,
+                                                               () -> CompletableFuture.completedFuture(
+                                                                       appBuilderService.followRunningTurn(applicationId))))
+                   .flatMapMany(Function.identity());
     }
 
     private static List<String> errorsOf(List<BuildEvent> events) {

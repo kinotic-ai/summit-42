@@ -251,6 +251,7 @@ function stopClock() {
   }
 }
 
+// the conversation, then the turn still running from an earlier visit, whose steps so far replay before it goes on live
 async function load() {
   loading.value = true
   loadError.value = null
@@ -261,8 +262,69 @@ async function load() {
   } finally {
     loading.value = false
   }
+  if (loadError.value === null) {
+    followRunningTurn()
+  }
   await scrollToBottom()
   input.value?.focus()
+}
+
+// the reply shows once the turn's first event replays, so a load with no turn running shows no reply; a turn that ended
+// between reading the conversation and following it replays nothing, and the conversation read again holds its reply
+function followRunningTurn() {
+  let turn: Turn | null = null
+  subscription = APP_BUILDER.followRunningTurn(props.app.applicationId).subscribe({
+    next: (event: BuildEvent) => {
+      turn ??= startTurn(event.timestamp)
+      receive(turn, event)
+    },
+    error: (err: unknown) => {
+      if (turn) {
+        turn.error = errorText(err, 'Could not follow the running build.')
+        finishTurn(turn)
+      } else {
+        subscription = null
+        notice.value = errorText(err, 'Could not follow the running build.')
+      }
+    },
+    complete: () => {
+      if (turn) {
+        finishTurn(turn)
+      } else {
+        subscription = null
+        if (turns.value[turns.value.length - 1]?.role === 'USER') {
+          void reload()
+        }
+      }
+    },
+  })
+}
+
+async function reload() {
+  try {
+    show(await APP_BUILDER.findConversation(props.app.applicationId))
+  } catch {
+    // the conversation shown stays as it was read
+  }
+}
+
+// adds the assistant's turn the stream fills, started at the given time
+function startTurn(startedAt: number): Turn {
+  turns.value.push({ role: 'ASSISTANT', parts: [], error: null })
+  // the pushed object is wrapped in a reactive proxy, which the stream's updates must go through to render
+  const turn = turns.value[turns.value.length - 1] as Turn
+  reply.value = turn
+  streaming.value = true
+  lastEventAt.value = startedAt
+  turnStartedAt.value = startedAt
+  now.value = Date.now()
+  clock = setInterval(() => { now.value = Date.now() }, 1000)
+  return turn
+}
+
+function receive(turn: Turn, event: BuildEvent) {
+  lastEventAt.value = event.timestamp
+  apply(turn, event)
 }
 
 function send() {
@@ -272,23 +334,14 @@ function send() {
   draft.value = ''
   notice.value = null
   void nextTick(autosize)
+  // a follow still waiting for a running turn is replaced by the turn this message starts
+  subscription?.unsubscribe()
   turns.value.push({ role: 'USER', parts: textParts(message), error: null })
-  turns.value.push({ role: 'ASSISTANT', parts: [], error: null })
-  // the pushed object is wrapped in a reactive proxy, which the stream's updates must go through to render
-  const turn = turns.value[turns.value.length - 1] as Turn
-  reply.value = turn
-  streaming.value = true
-  lastEventAt.value = Date.now()
-  turnStartedAt.value = lastEventAt.value
-  now.value = lastEventAt.value
-  clock = setInterval(() => { now.value = Date.now() }, 1000)
+  const turn = startTurn(Date.now())
   void scrollToBottom()
 
   subscription = APP_BUILDER.chat(props.app.applicationId, message).subscribe({
-    next: (event: BuildEvent) => {
-      lastEventAt.value = Date.now()
-      apply(turn, event)
-    },
+    next: (event: BuildEvent) => receive(turn, event),
     error: (err: unknown) => {
       turn.error = errorText(err, 'The builder stopped unexpectedly.')
       finishTurn(turn)
@@ -340,13 +393,13 @@ function apply(turn: Turn, event: BuildEvent) {
     case 'PROGRESS':
       if (event.text && event.text !== currentStep.value) {
         settleActiveStep(turn, 'done')
-        addStep(turn, { text: event.text, state: 'active', startedAt: Date.now(), type: event.stepType })
+        addStep(turn, { text: event.text, state: 'active', startedAt: event.timestamp, type: event.stepType })
       }
       break
     case 'APP_READY':
       settleActiveStep(turn, 'done')
       if (event.url) {
-        addStep(turn, { text: `Live at ${hostOf(event.url)}`, state: 'done', startedAt: Date.now(), type: 'LIVE' })
+        addStep(turn, { text: `Live at ${hostOf(event.url)}`, state: 'done', startedAt: event.timestamp, type: 'LIVE' })
         emit('deployed', event.url)
       }
       break

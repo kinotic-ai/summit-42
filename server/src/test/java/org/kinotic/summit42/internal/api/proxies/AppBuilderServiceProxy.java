@@ -27,6 +27,8 @@ public interface AppBuilderServiceProxy {
 
     Flux<BuildEvent> chat(String applicationId, String message);
 
+    Flux<BuildEvent> followRunningTurn(String applicationId);
+
     Future<Conversation> findConversation(String applicationId);
 
     Future<Void> resetConversation(String applicationId);

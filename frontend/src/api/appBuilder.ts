@@ -20,6 +20,8 @@ export interface BuildEvent {
     url: string | null
     /** What the step does, for PROGRESS. */
     stepType: BuildStepType | null
+    /** When the event happened, in epoch milliseconds. */
+    timestamp: number
 }
 
 /** The stages a turn that builds an app moves through, in order. */
@@ -81,6 +83,14 @@ export class AppBuilderService {
      */
     public chat(applicationId: string, message: string): Observable<BuildEvent> {
         return this.serviceProxy.invokeStream('chat', [applicationId, message])
+    }
+
+    /**
+     * Follows the app's running turn as chat streams it, from its first event; completes at once when no turn runs.
+     * A turn runs to its end whether or not anyone follows it.
+     */
+    public followRunningTurn(applicationId: string): Observable<BuildEvent> {
+        return this.serviceProxy.invokeStream('followRunningTurn', [applicationId])
     }
 
     /** The app's conversation so far, to render on load. */
