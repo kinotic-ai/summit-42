@@ -65,6 +65,10 @@ public class DefaultAppBuilderService implements AppBuilderService {
     private static final String SYSTEM_PROMPT_RESOURCE = "prompts/app-builder.md";
     private static final String TURN_RUNNING = "Claude is still working on your last message";
     private static final String TURN_FAILED = "Something went wrong. Please try again.";
+    private static final String SUMMARIZE_PROMPT = """
+            The user describes an app they want built. Reply with only a one-line description of the app for a list of
+            apps: a single sentence of at most 15 words saying what the app is for, with no quotes or preamble. A
+            description that is already that short is returned unchanged.""";
     private static final String REPOSITORY_UNUSABLE = "Summit 42 can no longer reach this app's GitHub repository."
                                                       + " On GitHub, give the Kinotic app access to the repository again.";
     // the most recent messages of the conversation a turn sends Claude
@@ -111,11 +115,14 @@ public class DefaultAppBuilderService implements AppBuilderService {
     public Future<BuilderApp> createApp(String name, String description) {
         OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
         Validate.notBlank(name, "Name the app");
-        // the platform gives each of the app's users a tenant, so an entity can keep its rows private to each user
-        Application application = new Application(name.strip(), StringUtils.trimToNull(description))
-                .setOrganizationId(participant.getOrganizationId())
-                .setTenantManagement(TenantManagement.PLATFORM);
-        return callAs(participant, () -> applicationService.createSync(application))
+        return summarize(StringUtils.trimToNull(description))
+                .compose(summary -> {
+                    // the platform gives each of the app's users a tenant, so an entity can keep its rows private to each user
+                    Application application = new Application(name.strip(), summary)
+                            .setOrganizationId(participant.getOrganizationId())
+                            .setTenantManagement(TenantManagement.PLATFORM);
+                    return callAs(participant, () -> applicationService.createSync(application));
+                })
                 // an app deleted earlier under the same name had the same id, and its conversation is not this app's;
                 // one that cannot be deleted is logged rather than failing an app that was created
                 .compose(created -> sessionRepository.deleteById(new ApplicationKey(participant.getOrganizationId(), created.getId()))
@@ -126,6 +133,27 @@ public class DefaultAppBuilderService implements AppBuilderService {
                 .compose(created -> createProject(participant, created)
                         .compose(project -> buildable(participant, project))
                         .map(project -> new BuilderApp(created.getId(), created.getName(), created.getDescription(), null)));
+    }
+
+    // Claude's one-line summary of what the user wants the app to do; an app whose summary fails is created without
+    // a description, since the chat still has the user's own words
+    private Future<String> summarize(String description) {
+        if (description == null) {
+            return Future.succeededFuture();
+        }
+        Mono<String> summary = Mono.fromCompletionStage(chatClientFactory::chatClient)
+                                   .flatMap(client -> client.prompt()
+                                                            .system(SUMMARIZE_PROMPT)
+                                                            .user(description)
+                                                            .stream()
+                                                            .content()
+                                                            .collect(Collectors.joining()));
+        return Future.fromCompletionStage(summary.toFuture(), vertx.getOrCreateContext())
+                     .map(StringUtils::trimToNull)
+                     .recover(e -> {
+                         log.error("The description of a new app could not be summarized", e);
+                         return Future.succeededFuture();
+                     });
     }
 
     @Override
