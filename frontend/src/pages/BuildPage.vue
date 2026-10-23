@@ -14,7 +14,24 @@
 
       <span class="stage__spacer" />
 
-      <section v-if="app.url" class="status glass">
+      <section v-if="progress || !app.url" class="status glass">
+        <div class="tracker__head">
+          <p :class="['status__eyebrow', { 'status__eyebrow--idle': !progress }]">{{ trackerTitle }}</p>
+          <span v-if="progress" class="tracker__elapsed">{{ formatDuration(now - progress.startedAt) }}</span>
+        </div>
+        <ol class="tracker">
+          <li v-for="(stage, index) in BUILD_STAGES" :key="stage" :class="['tracker__stage', `tracker__stage--${stageState(index)}`]">
+            <span class="tracker__track">
+              <span class="tracker__dot"><AppIcon v-if="stageState(index) === 'done'" name="check" :stroke-width="3" /></span>
+              <span v-if="index < BUILD_STAGES.length - 1" class="tracker__line" />
+            </span>
+            <span class="tracker__label">{{ STAGE_LABELS[stage] }}</span>
+          </li>
+        </ol>
+        <p class="tracker__detail">{{ progress ? progress.detail : 'Describe it in the chat, and Summit 42 builds and deploys it.' }}</p>
+      </section>
+
+      <section v-else class="status glass">
         <p class="status__eyebrow">Your app is live</p>
         <a :href="app.url" target="_blank" rel="noopener" class="status__url">{{ hostOf(app.url) }}</a>
         <div class="status__actions">
@@ -30,18 +47,18 @@
              :key="app.applicationId"
              class="build__chat"
              :app="app"
-             @working="working = $event"
+             @progress="progress = $event"
              @deployed="markDeployed(app.applicationId, $event)"
              @close="chatOpen = false" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import AppChat from '@/components/AppChat.vue'
 import AppIcon from '@/components/AppIcon.vue'
-import { markDeployed, type BuilderApp } from '@/api/appBuilder'
-import { copyText, hostOf } from '@/api/format'
+import { BUILD_STAGES, markDeployed, type BuildProgress, type BuildStage, type BuilderApp } from '@/api/appBuilder'
+import { copyText, formatDuration, hostOf } from '@/api/format'
 
 /** Building an app: the chat in a drawer on the right, where the build's progress shows, and the app's link over the photo. */
 const props = defineProps<{
@@ -49,12 +66,59 @@ const props = defineProps<{
 }>()
 
 const chatOpen = ref(true)
-const working = ref(false)
+const progress = ref<BuildProgress | null>(null)
 const copied = ref(false)
+const now = ref(Date.now())
+let clock: ReturnType<typeof setInterval> | null = null
+
+const STAGE_LABELS: Record<BuildStage, string> = {
+  PLANNING: 'Planning',
+  WRITING: 'Writing code',
+  DEPLOYING: 'Deploying',
+  LIVE: 'Live',
+}
+
+const trackerTitle = computed(() => {
+  let ret = 'Not built yet'
+  if (progress.value) {
+    ret = props.app.url ? `Updating ${props.app.name}` : `Building ${props.app.name}`
+  }
+  return ret
+})
+
+// the elapsed time ticks only while a turn runs
+watch(() => progress.value !== null, running => {
+  stopClock()
+  if (running) {
+    now.value = Date.now()
+    clock = setInterval(() => { now.value = Date.now() }, 1000)
+  }
+})
+
+onBeforeUnmount(stopClock)
+
+function stopClock() {
+  if (clock !== null) {
+    clearInterval(clock)
+    clock = null
+  }
+}
+
+// stages before the turn's are done, its own is current, and Live is done once reached
+function stageState(index: number): 'done' | 'current' | 'todo' {
+  const current = progress.value ? BUILD_STAGES.indexOf(progress.value.stage) : -1
+  let ret: 'done' | 'current' | 'todo' = 'todo'
+  if (index < current || (index === current && progress.value?.stage === 'LIVE')) {
+    ret = 'done'
+  } else if (index === current) {
+    ret = 'current'
+  }
+  return ret
+}
 
 const chip = computed(() => {
   let ret: { text: string; class: string }
-  if (working.value) {
+  if (progress.value) {
     ret = { text: props.app.url ? 'Updating' : 'Building', class: 'chip--working' }
   } else if (props.app.url) {
     ret = { text: 'Live', class: 'chip--live' }
@@ -121,6 +185,116 @@ async function copyLink() {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--success-text);
+}
+
+.status__eyebrow--idle {
+  color: var(--text-muted);
+}
+
+.tracker__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.tracker__elapsed {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.tracker {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0.9rem 0 0.8rem;
+  padding: 0;
+  list-style: none;
+}
+
+.tracker__stage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.tracker__track {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.tracker__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+}
+
+.tracker__dot .icon {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.tracker__line {
+  flex: 1;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border-strong);
+}
+
+.tracker__label {
+  font-size: 0.82rem;
+  color: var(--text-subtle);
+}
+
+.tracker__stage--done .tracker__dot {
+  border-color: var(--success);
+  background: var(--success);
+  color: var(--bg);
+}
+
+.tracker__stage--done .tracker__line {
+  background: var(--success);
+}
+
+.tracker__stage--done .tracker__label {
+  color: var(--text-muted);
+}
+
+.tracker__stage--current .tracker__dot {
+  border-color: var(--accent);
+  background: var(--accent);
+  animation: tracker-pulse 1.6s ease-out infinite;
+}
+
+.tracker__stage--current .tracker__label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+@keyframes tracker-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(232, 135, 90, 0.55); }
+  100% { box-shadow: 0 0 0 0.6rem rgba(232, 135, 90, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tracker__stage--current .tracker__dot {
+    animation: none;
+  }
+}
+
+.tracker__detail {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+  color: var(--text-2);
 }
 
 .status__url {

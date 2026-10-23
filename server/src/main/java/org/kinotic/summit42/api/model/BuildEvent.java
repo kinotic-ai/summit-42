@@ -26,19 +26,24 @@ public class BuildEvent {
      */
     private String url;
 
+    /**
+     * What the step does for {@link BuildEventType#PROGRESS}, otherwise null.
+     */
+    private BuildStepType stepType;
+
     public static BuildEvent text(String text) {
-        return new BuildEvent(BuildEventType.TEXT, text, null);
+        return new BuildEvent(BuildEventType.TEXT, text, null, null);
     }
 
-    public static BuildEvent progress(String text) {
-        return new BuildEvent(BuildEventType.PROGRESS, text, null);
+    public static BuildEvent progress(BuildStepType stepType, String text) {
+        return new BuildEvent(BuildEventType.PROGRESS, text, null, stepType);
     }
 
     public static BuildEvent appReady(String url) {
-        return new BuildEvent(BuildEventType.APP_READY, null, url);
+        return new BuildEvent(BuildEventType.APP_READY, null, url, null);
     }
 
     public static BuildEvent error(String text) {
-        return new BuildEvent(BuildEventType.ERROR, text, null);
+        return new BuildEvent(BuildEventType.ERROR, text, null, null);
     }
 }

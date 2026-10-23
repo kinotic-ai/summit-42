@@ -16,6 +16,7 @@ import org.kinotic.management.api.services.ProjectService;
 import org.kinotic.management.api.services.deployment.UiDeploymentService;
 import org.kinotic.management.api.services.github.ProjectRepoCredentialService;
 import org.kinotic.summit42.api.model.BuildEvent;
+import org.kinotic.summit42.api.model.BuildStepType;
 import org.kinotic.summit42.internal.api.repositories.BuilderSession;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
@@ -38,7 +39,7 @@ import java.util.function.Supplier;
 /**
  * The tools Claude builds the turn's app with. Each works on the project of the {@link BuilderTurn} and acts for its
  * signed-in user, so Kinotic authorizes every call against their organization, and reports what it does as
- * {@link BuildEvent#progress(String)} events.
+ * {@link BuildEvent#progress(BuildStepType, String)} events.
  */
 @Component
 @RequiredArgsConstructor
@@ -92,13 +93,13 @@ public class AppBuilderTools {
 
     @Tool(description = "Lists the path of every file in the app's repository on its default branch.")
     public String listFiles(ToolContext toolContext) {
-        return act(toolContext, "Looking through the app's files", this::describeFiles);
+        return act(toolContext, BuildStepType.READING, "Looking through the app's files", this::describeFiles);
     }
 
     @Tool(description = "Reads files of the app's repository, returning each file's content under a header naming it.")
     public String readFiles(@ToolParam(description = "Repository paths of the files to read") List<String> paths,
                             ToolContext toolContext) {
-        return act(toolContext, "Reading " + describePaths(paths), turn -> {
+        return act(toolContext, BuildStepType.READING, "Reading " + describePaths(paths), turn -> {
             ProjectRepoToken token = repoToken(turn);
             StringBuilder ret = new StringBuilder();
             for (String path : paths) {
@@ -119,7 +120,7 @@ public class AppBuilderTools {
                              @ToolParam(description = "The files to write or delete") List<RepoFile> files,
                              ToolContext toolContext) {
         Validate.notEmpty(files, "files are required");
-        return act(toolContext, "Committing " + files.size() + (files.size() == 1 ? " file: " : " files: ") + message, turn -> {
+        return act(toolContext, BuildStepType.COMMITTING, "Committing " + files.size() + (files.size() == 1 ? " file: " : " files: ") + message, turn -> {
             ProjectRepoToken token = repoToken(turn);
             String commitSha = await(gitHubRepoClient.commit(token, message, files));
             turn.getSession().setLastCommitSha(commitSha);
@@ -131,7 +132,7 @@ public class AppBuilderTools {
             Waits until the deployment of the last commit writeFiles made has finished and its UIs serve it, and returns \
             its outcome: the URLs the app's UIs serve at, or why it failed. A failed deployment names the error to fix.""")
     public String waitForDeployment(ToolContext toolContext) {
-        return act(toolContext, "Waiting for the deployment", turn -> {
+        return act(toolContext, BuildStepType.DEPLOYING, "Waiting for the deployment", turn -> {
             String commitSha = turn.getSession().getLastCommitSha();
             Validate.validState(commitSha != null, "Nothing has been committed yet");
             long deadline = System.nanoTime() + DEPLOYMENT_TIMEOUT.toNanos();
@@ -162,7 +163,7 @@ public class AppBuilderTools {
         } else {
             // 05.persistence/02.defining-entities.md reads as "persistence / defining entities"
             String title = page.replaceAll("\\d+\\.", "").replace(".md", "").replace("/", " / ").replace('-', ' ');
-            ret = act(toolContext, "Reading Kinotic's docs on " + title,
+            ret = act(toolContext, BuildStepType.READING, "Reading Kinotic's docs on " + title,
                       turn -> await(webClient.get(443, DOCS_HOST, DOCS_PATH + page)
                                              .ssl(true)
                                              .send()
@@ -184,7 +185,7 @@ public class AppBuilderTools {
         String step = file == null || file.isBlank()
                 ? "Reading the " + skill + " skill"
                 : "Reading " + file + " of the " + skill + " skill";
-        return act(toolContext, step, turn -> turn.getSkills().read(skill, file));
+        return act(toolContext, BuildStepType.READING, step, turn -> turn.getSkills().read(skill, file));
     }
 
     private String describeFiles(BuilderTurn turn) {
@@ -222,7 +223,7 @@ public class AppBuilderTools {
             boolean intended = state != null && state.getDesired() != null && commitSha.equals(state.getDesired().commitSha());
             if (intended && state.getObserved() != null && state.getObserved().phase() != reported) {
                 reported = state.getObserved().phase();
-                turn.getEvents().accept(BuildEvent.progress("Deploying: " + reported.name().toLowerCase()));
+                turn.getEvents().accept(BuildEvent.progress(BuildStepType.DEPLOYING, "Deploying: " + reported.name().toLowerCase()));
             }
             // the observation answers this commit's push once the deployment has seen that intent and stopped
             // deploying; a FAILED observation names the commit still served, not the one that failed
@@ -240,7 +241,7 @@ public class AppBuilderTools {
     private String awaitUis(BuilderTurn turn, String commitSha, long deadline) {
         List<UiDeployment> uis = commitUis(turn, commitSha);
         if (!allServe(uis, commitSha)) {
-            turn.getEvents().accept(BuildEvent.progress("Publishing the app's pages"));
+            turn.getEvents().accept(BuildEvent.progress(BuildStepType.DEPLOYING, "Publishing the app's pages"));
         }
         while (!allServe(uis, commitSha) && System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
             await(vertx.timer(DEPLOYMENT_POLL_INTERVAL.toMillis(), TimeUnit.MILLISECONDS));
@@ -300,11 +301,11 @@ public class AppBuilderTools {
     }
 
     // holds the turn while the tool runs, so a cancelled turn keeps its session until the running tool returns
-    private static String act(ToolContext toolContext, String step, Function<BuilderTurn, String> work) {
+    private static String act(ToolContext toolContext, BuildStepType stepType, String step, Function<BuilderTurn, String> work) {
         BuilderTurn turn = (BuilderTurn) toolContext.getContext().get(TURN);
         Validate.validState(turn.hold(), "The turn has ended");
         try {
-            turn.getEvents().accept(BuildEvent.progress(step));
+            turn.getEvents().accept(BuildEvent.progress(stepType, step));
             synchronized (turn.getSession()) {
                 // the app was deleted, and one created again under its name has the same project id
                 Validate.validState(!turn.getSession().isDeleted(), "The app was deleted");
