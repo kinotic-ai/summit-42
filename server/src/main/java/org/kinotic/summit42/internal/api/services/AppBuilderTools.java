@@ -54,6 +54,8 @@ public class AppBuilderTools {
     private static final Duration DEPLOYMENT_POLL_INTERVAL = Duration.ofSeconds(5);
     // a repository token is renewed this long before it expires, so a commit never starts with one about to stop working
     private static final Duration TOKEN_RENEWAL_MARGIN = Duration.ofMinutes(5);
+    // the paths a readFiles step names before summing up the rest
+    private static final int MAX_PATHS_DESCRIBED = 3;
     private static final String DOCS_HOST = "raw.githubusercontent.com";
     private static final String DOCS_PATH = "/kinotic-ai/kinotic/develop/website/content/01.apps/";
     private static final List<String> DOC_PAGES = List.of(
@@ -90,13 +92,13 @@ public class AppBuilderTools {
 
     @Tool(description = "Lists the path of every file in the app's repository on its default branch.")
     public String listFiles(ToolContext toolContext) {
-        return act(toolContext, this::describeFiles);
+        return act(toolContext, "Looking through the app's files", this::describeFiles);
     }
 
     @Tool(description = "Reads files of the app's repository, returning each file's content under a header naming it.")
     public String readFiles(@ToolParam(description = "Repository paths of the files to read") List<String> paths,
                             ToolContext toolContext) {
-        return act(toolContext, turn -> {
+        return act(toolContext, "Reading " + describePaths(paths), turn -> {
             ProjectRepoToken token = repoToken(turn);
             StringBuilder ret = new StringBuilder();
             for (String path : paths) {
@@ -116,10 +118,9 @@ public class AppBuilderTools {
     public String writeFiles(@ToolParam(description = "The commit message") String message,
                              @ToolParam(description = "The files to write or delete") List<RepoFile> files,
                              ToolContext toolContext) {
-        return act(toolContext, turn -> {
-            Validate.notEmpty(files, "files are required");
+        Validate.notEmpty(files, "files are required");
+        return act(toolContext, "Committing " + files.size() + (files.size() == 1 ? " file: " : " files: ") + message, turn -> {
             ProjectRepoToken token = repoToken(turn);
-            turn.getEvents().accept(BuildEvent.progress("Committing " + files.size() + (files.size() == 1 ? " file" : " files")));
             String commitSha = await(gitHubRepoClient.commit(token, message, files));
             turn.getSession().setLastCommitSha(commitSha);
             return "Committed " + commitSha + "; its deployment has started.";
@@ -130,7 +131,7 @@ public class AppBuilderTools {
             Waits until the deployment of the last commit writeFiles made has finished and its UIs serve it, and returns \
             its outcome: the URLs the app's UIs serve at, or why it failed. A failed deployment names the error to fix.""")
     public String waitForDeployment(ToolContext toolContext) {
-        return act(toolContext, turn -> {
+        return act(toolContext, "Waiting for the deployment", turn -> {
             String commitSha = turn.getSession().getLastCommitSha();
             Validate.validState(commitSha != null, "Nothing has been committed yet");
             long deadline = System.nanoTime() + DEPLOYMENT_TIMEOUT.toNanos();
@@ -153,17 +154,21 @@ public class AppBuilderTools {
                         + "06.security/01.authentication.md, 07.deployment/*, 09.reference/01.decorators.md, "
                         + "09.reference/02.migration-sql-grammar.md; call it with an unknown page to list every page.")
     public String readKinoticDocs(@ToolParam(description = "The page's path, such as 05.persistence/02.defining-entities.md")
-                                  String page) {
+                                  String page,
+                                  ToolContext toolContext) {
         String ret;
         if (!DOC_PAGES.contains(page)) {
             ret = "Unknown page. The pages are:\n" + String.join("\n", DOC_PAGES);
         } else {
-            ret = await(webClient.get(443, DOCS_HOST, DOCS_PATH + page)
-                                 .ssl(true)
-                                 .send()
-                                 .map(resp -> resp.statusCode() == 200
-                                         ? resp.bodyAsString()
-                                         : "The page could not be read: HTTP " + resp.statusCode()));
+            // 05.persistence/02.defining-entities.md reads as "persistence / defining entities"
+            String title = page.replaceAll("\\d+\\.", "").replace(".md", "").replace("/", " / ").replace('-', ' ');
+            ret = act(toolContext, "Reading Kinotic's docs on " + title,
+                      turn -> await(webClient.get(443, DOCS_HOST, DOCS_PATH + page)
+                                             .ssl(true)
+                                             .send()
+                                             .map(resp -> resp.statusCode() == 200
+                                                     ? resp.bodyAsString()
+                                                     : "The page could not be read: HTTP " + resp.statusCode())));
         }
         return ret;
     }
@@ -176,7 +181,10 @@ public class AppBuilderTools {
                                        description = "The file's path in the skill; omit it to read SKILL.md")
                             String file,
                             ToolContext toolContext) {
-        return act(toolContext, turn -> turn.getSkills().read(skill, file));
+        String step = file == null || file.isBlank()
+                ? "Reading the " + skill + " skill"
+                : "Reading " + file + " of the " + skill + " skill";
+        return act(toolContext, step, turn -> turn.getSkills().read(skill, file));
     }
 
     private String describeFiles(BuilderTurn turn) {
@@ -186,6 +194,19 @@ public class AppBuilderTools {
         if (tree.truncated()) {
             ret += "\nThe list is incomplete: GitHub lists only part of a repository this large, so a file missing from it"
                    + " may still exist.";
+        }
+        return ret;
+    }
+
+    // the first few paths, so a step reading many files stays one line
+    private static String describePaths(List<String> paths) {
+        String ret;
+        if (paths == null || paths.isEmpty()) {
+            ret = "files";
+        } else if (paths.size() <= MAX_PATHS_DESCRIBED) {
+            ret = String.join(", ", paths);
+        } else {
+            ret = String.join(", ", paths.subList(0, MAX_PATHS_DESCRIBED)) + " and " + (paths.size() - MAX_PATHS_DESCRIBED) + " more";
         }
         return ret;
     }
@@ -279,10 +300,11 @@ public class AppBuilderTools {
     }
 
     // holds the turn while the tool runs, so a cancelled turn keeps its session until the running tool returns
-    private static String act(ToolContext toolContext, Function<BuilderTurn, String> work) {
+    private static String act(ToolContext toolContext, String step, Function<BuilderTurn, String> work) {
         BuilderTurn turn = (BuilderTurn) toolContext.getContext().get(TURN);
         Validate.validState(turn.hold(), "The turn has ended");
         try {
+            turn.getEvents().accept(BuildEvent.progress(step));
             synchronized (turn.getSession()) {
                 // the app was deleted, and one created again under its name has the same project id
                 Validate.validState(!turn.getSession().isDeleted(), "The app was deleted");

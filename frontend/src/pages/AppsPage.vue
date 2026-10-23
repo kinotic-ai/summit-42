@@ -267,7 +267,7 @@ function open(app: BuilderApp) {
   padding: 1.25rem;
   border: 1px dashed rgba(255, 255, 255, 0.22);
   border-radius: var(--radius);
-  background: rgba(10, 20, 32, 0.45);
+  background: rgba(24, 39, 57, 0.4);
   color: var(--text);
   font-size: 0.9rem;
   cursor: pointer;
@@ -276,7 +276,7 @@ function open(app: BuilderApp) {
 
 .app-new:hover {
   border-color: var(--accent-border);
-  background: rgba(10, 20, 32, 0.65);
+  background: rgba(24, 39, 57, 0.6);
 }
 
 .app-new .icon {

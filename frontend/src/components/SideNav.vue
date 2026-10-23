@@ -54,7 +54,7 @@ const emit = defineEmits<{
   gap: 2px;
   padding: 1rem 0.75rem;
   border-right: 1px solid var(--border);
-  background: rgba(8, 16, 26, 0.62);
+  background: rgba(20, 33, 49, 0.55);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   overflow-y: auto;

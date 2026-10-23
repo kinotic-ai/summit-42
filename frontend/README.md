@@ -48,7 +48,7 @@ bun run build        # vue-tsc type-check, then vite build into dist/
 | `/` | The workspace's apps: connecting GitHub, creating an app, and a card per app with its link (every signed-in page redirects to `/login?referer=<path>` without a session, which returns there after signing in) |
 | `/members` | The workspace's members: invite, resend or cancel an invitation, disable, enable or remove |
 | `/settings` | The workspace's GitHub link, its own sign-in methods, and its id |
-| `/apps/<application id>` | Build: the app's status and link beside the chat with the builder, which shows each step of a build as it runs |
+| `/apps/<application id>` | Build: the app's status and link beside the chat with the builder, which shows each step of a build as it runs, between the parts of Claude's reply, and how long the current step or Claude's thinking has taken |
 | `/apps/<application id>/overview` | The app's link, status, data types, users, repository and recent deployments |
 | `/apps/<application id>/data` | The records of each of the app's entity types, searchable and paged |
 | `/apps/<application id>/users` | The people who sign in to the app: invite, disable, enable or remove |

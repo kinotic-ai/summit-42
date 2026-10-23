@@ -38,22 +38,25 @@
         <div v-for="(turn, index) in turns"
              :key="index"
              :class="['msg', turn.role === 'USER' ? 'msg--user' : 'msg--assistant']">
-          <div v-if="turn.text" class="msg__bubble">{{ turn.text }}</div>
-          <ul v-if="turn.steps.length > 0" class="steps" aria-label="What Summit 42 did" aria-live="polite">
-            <li v-for="(step, stepIndex) in turn.steps" :key="stepIndex" :class="['step', `step--${step.state}`]">
-              <span class="step__icon">
-                <span v-if="step.state === 'active'" class="spinner" />
-                <AppIcon v-else-if="step.state === 'done'" name="check" :stroke-width="3" />
-                <AppIcon v-else name="close" :stroke-width="3" />
-              </span>
-              <span>{{ step.text }}</span>
-            </li>
-          </ul>
+          <template v-for="(part, partIndex) in turn.parts" :key="partIndex">
+            <div v-if="part.type === 'text'" class="msg__bubble">{{ part.text }}</div>
+            <ul v-else class="steps" aria-label="What Summit 42 did" aria-live="polite">
+              <li v-for="(step, stepIndex) in part.steps" :key="stepIndex" :class="['step', `step--${step.state}`]">
+                <span class="step__icon">
+                  <span v-if="step.state === 'active'" class="spinner" />
+                  <AppIcon v-else-if="step.state === 'done'" name="check" :stroke-width="3" />
+                  <AppIcon v-else name="close" :stroke-width="3" />
+                </span>
+                <span class="step__text">{{ step.text }}</span>
+                <span v-if="step.state === 'active' && elapsed(step.startedAt) !== null" class="step__elapsed">{{ elapsed(step.startedAt) }}</span>
+              </li>
+            </ul>
+          </template>
+          <div v-if="turn === reply && thinking" class="thinking" aria-live="polite">
+            <span class="spinner" /> Thinking
+            <span v-if="elapsed(lastEventAt) !== null" class="thinking__elapsed">{{ elapsed(lastEventAt) }}</span>
+          </div>
           <div v-if="turn.error" class="msg__error" role="alert">{{ turn.error }}</div>
-        </div>
-
-        <div v-if="streaming && !lastTurnHasContent" class="thinking" aria-live="polite">
-          <span class="spinner" /> Thinking…
         </div>
       </template>
     </div>
@@ -90,15 +93,22 @@ import { errorText, hostOf } from '@/api/format'
 interface Step {
   text: string
   state: 'active' | 'done' | 'failed'
+  /** When the step started, in epoch milliseconds. */
+  startedAt: number
 }
 
-/** One message as the chat shows it: an assistant turn also carries the steps it took and what failed. */
+/** A run of the reply's text, or the steps taken between two runs of it. */
+type Part = { type: 'text'; text: string } | { type: 'steps'; steps: Step[] }
+
+/** One message as the chat shows it: an assistant turn interleaves its text with the steps it took, in order. */
 interface Turn {
   role: ChatRole
-  text: string
-  steps: Step[]
+  parts: Part[]
   error: string | null
 }
+
+// a step or a quiet stream shows how long it has run once it has run this long
+const ELAPSED_SHOWN_AFTER_MS = 3000
 
 /** The chat with the builder about one app; the parent remounts it for another app. */
 const props = defineProps<{
@@ -108,8 +118,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** The app was deployed and its UI serves at the url. */
   deployed: [url: string]
-  /** What the builder is doing now, or null once the turn is over. */
-  activity: [text: string | null]
+  /** Whether a turn is running. */
+  working: [working: boolean]
   /** The user closed the chat. */
   close: []
 }>()
@@ -121,24 +131,28 @@ const loadError = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const streaming = ref(false)
 const resetting = ref(false)
+// the reply the running turn streams into, the time of its last event, and a clock the elapsed times tick with
+const reply = ref<Turn | null>(null)
+const lastEventAt = ref(0)
+const now = ref(Date.now())
 
 const scroller = ref<HTMLElement | null>(null)
 const input = ref<HTMLTextAreaElement | null>(null)
 
 let subscription: Subscription | null = null
+let clock: ReturnType<typeof setInterval> | null = null
 
 const canSend = computed(() => !streaming.value && !loading.value && loadError.value === null
                                && draft.value.trim().length > 0)
 
-const lastTurnHasContent = computed(() => {
-  const last = turns.value[turns.value.length - 1]
-  return last !== undefined && last.role === 'ASSISTANT' && (last.text.length > 0 || last.steps.length > 0)
-})
+const activeStep = computed(() => (reply.value ? activeStepOf(reply.value) : null))
 
-const currentStep = computed(() => {
-  const last = turns.value[turns.value.length - 1]
-  return last?.steps.find(step => step.state === 'active')?.text ?? null
-})
+const currentStep = computed(() => activeStep.value?.text ?? null)
+
+// Claude is working without a step to show: before its first words, between steps, or while it writes a tool call;
+// shown once the stream has gone quiet, so it never trails text that is still streaming in
+const thinking = computed(() => streaming.value && activeStep.value === null
+                                && (reply.value?.parts.length === 0 || now.value - lastEventAt.value >= 1000))
 
 // the one-line status the header shows when the chat fills the screen and the page behind it is hidden
 const status = computed(() => {
@@ -157,11 +171,34 @@ onMounted(load)
 
 onBeforeUnmount(() => {
   subscription?.unsubscribe()
-  emit('activity', null)
+  stopClock()
+  emit('working', false)
 })
 
 function show(conversation: Conversation) {
-  turns.value = (conversation.messages ?? []).map(message => ({ role: message.role, text: message.text, steps: [], error: null }))
+  turns.value = (conversation.messages ?? []).map(message => ({ role: message.role, parts: textParts(message.text), error: null }))
+}
+
+function textParts(text: string): Part[] {
+  return text ? [{ type: 'text', text }] : []
+}
+
+/** How long ago a time was, such as 42s or 1:05, or null when it is too recent to show. */
+function elapsed(since: number): string | null {
+  const ms = now.value - since
+  let ret: string | null = null
+  if (ms >= ELAPSED_SHOWN_AFTER_MS) {
+    const seconds = Math.floor(ms / 1000)
+    ret = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  }
+  return ret
+}
+
+function stopClock() {
+  if (clock !== null) {
+    clearInterval(clock)
+    clock = null
+  }
 }
 
 async function load() {
@@ -185,67 +222,95 @@ function send() {
   draft.value = ''
   notice.value = null
   void nextTick(autosize)
-  turns.value.push({ role: 'USER', text: message, steps: [], error: null })
-  turns.value.push({ role: 'ASSISTANT', text: '', steps: [], error: null })
+  turns.value.push({ role: 'USER', parts: textParts(message), error: null })
+  turns.value.push({ role: 'ASSISTANT', parts: [], error: null })
   // the pushed object is wrapped in a reactive proxy, which the stream's updates must go through to render
-  const reply = turns.value[turns.value.length - 1] as Turn
+  const turn = turns.value[turns.value.length - 1] as Turn
+  reply.value = turn
   streaming.value = true
-  emit('activity', 'Thinking')
+  lastEventAt.value = Date.now()
+  now.value = lastEventAt.value
+  clock = setInterval(() => { now.value = Date.now() }, 1000)
+  emit('working', true)
   void scrollToBottom(true)
 
   subscription = APP_BUILDER.chat(props.app.applicationId, message).subscribe({
     next: (event: BuildEvent) => {
-      apply(reply, event)
+      lastEventAt.value = Date.now()
+      apply(turn, event)
       void scrollToBottom(false)
     },
     error: (err: unknown) => {
-      reply.error = errorText(err, 'The builder stopped unexpectedly.')
-      finishTurn(reply)
+      turn.error = errorText(err, 'The builder stopped unexpectedly.')
+      finishTurn(turn)
     },
-    complete: () => finishTurn(reply),
+    complete: () => finishTurn(turn),
   })
 }
 
-function settleActiveStep(reply: Turn, state: Step['state']) {
-  const active = reply.steps.find(step => step.state === 'active')
+function activeStepOf(turn: Turn): Step | null {
+  const last = turn.parts[turn.parts.length - 1]
+  return last?.type === 'steps' ? last.steps.find(step => step.state === 'active') ?? null : null
+}
+
+function settleActiveStep(turn: Turn, state: Step['state']) {
+  const active = activeStepOf(turn)
   if (active) {
     active.state = state
   }
 }
 
-function apply(reply: Turn, event: BuildEvent) {
+// adds the step to the steps after the reply's last text, starting a new run of steps after text
+function addStep(turn: Turn, step: Step) {
+  const last = turn.parts[turn.parts.length - 1]
+  if (last?.type === 'steps') {
+    last.steps.push(step)
+  } else {
+    turn.parts.push({ type: 'steps', steps: [step] })
+  }
+}
+
+function apply(turn: Turn, event: BuildEvent) {
   switch (event.type) {
-    case 'TEXT':
-      reply.text += event.text ?? ''
+    case 'TEXT': {
+      settleActiveStep(turn, 'done')
+      const last = turn.parts[turn.parts.length - 1]
+      if (last?.type === 'text') {
+        last.text += event.text ?? ''
+      } else if (event.text) {
+        turn.parts.push({ type: 'text', text: event.text })
+      }
       break
+    }
     case 'PROGRESS':
       if (event.text && event.text !== currentStep.value) {
-        settleActiveStep(reply, 'done')
-        reply.steps.push({ text: event.text, state: 'active' })
-        emit('activity', event.text)
+        settleActiveStep(turn, 'done')
+        addStep(turn, { text: event.text, state: 'active', startedAt: Date.now() })
       }
       break
     case 'APP_READY':
-      settleActiveStep(reply, 'done')
+      settleActiveStep(turn, 'done')
       if (event.url) {
-        reply.steps.push({ text: `Live at ${hostOf(event.url)}`, state: 'done' })
+        addStep(turn, { text: `Live at ${hostOf(event.url)}`, state: 'done', startedAt: Date.now() })
         emit('deployed', event.url)
       }
       break
     case 'ERROR':
-      settleActiveStep(reply, 'failed')
-      reply.error = event.text || 'Something went wrong.'
+      settleActiveStep(turn, 'failed')
+      turn.error = event.text || 'Something went wrong.'
       break
   }
 }
 
-function finishTurn(reply: Turn) {
-  settleActiveStep(reply, reply.error ? 'failed' : 'done')
+function finishTurn(turn: Turn) {
+  settleActiveStep(turn, turn.error ? 'failed' : 'done')
   streaming.value = false
   subscription = null
-  emit('activity', null)
-  if (!reply.text && !reply.error && reply.steps.length === 0) {
-    turns.value = turns.value.filter(turn => turn !== reply)
+  reply.value = null
+  stopClock()
+  emit('working', false)
+  if (turn.parts.length === 0 && !turn.error) {
+    turns.value = turns.value.filter(listed => listed !== turn)
   }
   void nextTick(() => input.value?.focus())
 }
@@ -490,6 +555,18 @@ async function startOver() {
   gap: 0.6rem;
   color: var(--text-nav);
   overflow-wrap: anywhere;
+}
+
+.step__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.step__elapsed,
+.thinking__elapsed {
+  flex: none;
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
 }
 
 .step__icon {
