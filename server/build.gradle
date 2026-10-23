@@ -77,6 +77,8 @@ dependencies {
     implementation 'io.vertx:vertx-web-client'
     implementation 'io.projectreactor:reactor-core'
     implementation 'org.apache.commons:commons-lang3'
+    // reads the frontmatter of the Kinotic plugin's skills
+    implementation 'org.yaml:snakeyaml'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'io.projectreactor:reactor-test'

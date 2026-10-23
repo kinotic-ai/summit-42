@@ -168,6 +168,17 @@ public class AppBuilderTools {
         return ret;
     }
 
+    @Tool(description = """
+            Reads one of the Kinotic skills the system prompt lists: its SKILL.md, or another of its files such as \
+            references/decorators.md. The answer ends with the paths of the skill's other files.""")
+    public String readSkill(@ToolParam(description = "The skill's name, such as frontend") String skill,
+                            @ToolParam(required = false,
+                                       description = "The file's path in the skill; omit it to read SKILL.md")
+                            String file,
+                            ToolContext toolContext) {
+        return act(toolContext, turn -> turn.getSkills().read(skill, file));
+    }
+
     private String describeFiles(BuilderTurn turn) {
         ProjectRepoToken token = repoToken(turn);
         RepoTree tree = await(gitHubRepoClient.listFiles(token));

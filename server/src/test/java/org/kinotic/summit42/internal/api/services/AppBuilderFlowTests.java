@@ -1,5 +1,6 @@
 package org.kinotic.summit42.internal.api.services;
 
+import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Assertions;
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.kinotic.domain.api.model.Application;
 import org.kinotic.domain.api.model.ApplicationKey;
+import org.kinotic.domain.api.model.TenantManagement;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
 import org.kinotic.management.api.model.Project;
 import org.kinotic.management.api.model.ProjectType;
@@ -114,6 +116,7 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         Assertions.assertEquals("Todo List", application.getName());
         Assertions.assertNull(application.getDescription());
         Assertions.assertEquals(organizationId(), application.getOrganizationId());
+        Assertions.assertEquals(TenantManagement.PLATFORM, application.getTenantManagement());
         // the app is the application the application service created, under the id it assigned
         Assertions.assertEquals(application.getId(), app.getApplicationId());
         Assertions.assertEquals("Todo List", app.getName());
@@ -285,6 +288,46 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     @Test
+    public void testChatListsTheKinoticSkillsWithADescription() {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        anthropic.replyWithText("Done");
+
+        chat("todo", "Build a todo app");
+
+        String system = systemOf(anthropic.requests().getFirst());
+        Assertions.assertTrue(system.contains("The Kinotic skills readSkill reads:\n"
+                                              + "- frontend: How a UI signs in and connects to Kinotic.\n"
+                                              + "- services: How to publish a service."), system);
+        Assertions.assertFalse(system.contains("create-app"), system);
+        Assertions.assertFalse(system.contains("notes"), system);
+    }
+
+    @Test
+    public void testReadSkillReadsTheSkillWithoutItsFrontmatterAndNamesItsOtherFiles() {
+        String toolResult = readSkill(new JsonObject().put("skill", "frontend"));
+
+        Assertions.assertTrue(toolResult.startsWith("# Frontends\n\nSign in with login(), then connect."), toolResult);
+        Assertions.assertFalse(toolResult.contains("description:"), toolResult);
+        Assertions.assertTrue(toolResult.endsWith("The skill's other files, which readSkill reads:\nreferences/vite.md"),
+                              toolResult);
+    }
+
+    @Test
+    public void testReadSkillReadsAReferenceOfTheSkill() {
+        String toolResult = readSkill(new JsonObject().put("skill", "frontend").put("file", "references/vite.md"));
+
+        Assertions.assertTrue(toolResult.startsWith("# Vite\n\nAlias the domain package to its source."), toolResult);
+        Assertions.assertTrue(toolResult.endsWith("The skill's other files, which readSkill reads:\nSKILL.md"), toolResult);
+    }
+
+    @Test
+    public void testReadSkillOfASkillLeftOutNamesTheSkills() {
+        String toolResult = readSkill(new JsonObject().put("skill", "create-app"));
+
+        Assertions.assertEquals("Unknown skill. The skills are: frontend, services", toolResult);
+    }
+
+    @Test
     public void testWaitForDeploymentReportsTheServingUiAndTheAppsUrl() {
         Project project = deployedProject(new DeploymentState(DeploymentStatusType.READY, COMMIT), null);
         uiDeploymentService.add(ui("todo", project.getId(), "web", COMMIT, "https://todo.example"));
@@ -318,6 +361,17 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
 
     private String organizationId() {
         return participant.getOrganizationId();
+    }
+
+    // the text of a turn's readSkill call with the input given, which Spring AI sends Claude as a JSON string
+    private String readSkill(JsonObject input) {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        anthropic.replyWithToolCall("readSkill", input);
+        anthropic.replyWithText("Read it");
+
+        chat("todo", "Build a todo app");
+
+        return (String) Json.decodeValue(toolResultOf(anthropic.requests().getLast()));
     }
 
     private BuilderSession sessionOf(String applicationId) {
