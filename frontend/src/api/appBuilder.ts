@@ -4,15 +4,15 @@ import { reactive } from 'vue'
 import { SESSION } from '@/api/session'
 
 /** What one event of a chat turn carries. */
-export type BuildEventType = 'TEXT' | 'PROGRESS' | 'APP_READY' | 'ERROR'
+export type BuildEventType = 'TEXT' | 'PROGRESS' | 'APP_READY' | 'USER_MESSAGE' | 'ERROR'
 
 /** What a PROGRESS step does: reading the app's files, a skill or the docs; committing files; or deploying. */
 export type BuildStepType = 'READING' | 'COMMITTING' | 'DEPLOYING'
 
 /**
  * One event of a chat turn: TEXT is a chunk of the assistant's reply to append, PROGRESS a one-line status of what
- * the builder is doing, APP_READY carries the deployed app's url, and ERROR the text of what failed, after which
- * the stream ends.
+ * the builder is doing, APP_READY carries the deployed app's url, USER_MESSAGE a message the user sent during the
+ * turn, which Claude reads from that point on, and ERROR the text of what failed, after which the stream ends.
  */
 export interface BuildEvent {
     type: BuildEventType
@@ -79,7 +79,9 @@ export class AppBuilderService {
 
     /**
      * Sends a message about the app; the events of the builder's turn follow, and the stream completes when the turn
-     * is over.
+     * is over. A message sent while a turn runs steers it: the running turn streams it as a USER_MESSAGE event where
+     * Claude reads it, and this stream completes without events; one sent after the turn's last step streams a turn
+     * of its own, which starts once the running turn has ended.
      */
     public chat(applicationId: string, message: string): Observable<BuildEvent> {
         return this.serviceProxy.invokeStream('chat', [applicationId, message])

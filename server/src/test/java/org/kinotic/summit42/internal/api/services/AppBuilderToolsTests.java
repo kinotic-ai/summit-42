@@ -15,6 +15,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -66,7 +67,7 @@ public class AppBuilderToolsTests {
     private static BuilderTurn newTurn() {
         BuilderSession session = new BuilderSession(new ApplicationKey("org", "app"), new Conversation()).setTurnRunning(true);
         return new BuilderTurn(new DefaultOrganizationParticipant("user", "org", null, null), session, "project",
-                               new SkillSet("commit", new TreeMap<>()), event -> {});
+                               new SkillSet("commit", new TreeMap<>()), event -> {}, List::of);
     }
 
     private static ToolContext contextOf(BuilderTurn turn) {

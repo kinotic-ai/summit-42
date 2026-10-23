@@ -1,6 +1,7 @@
 package org.kinotic.summit42.internal.api.services;
 
 import lombok.RequiredArgsConstructor;
+import io.micrometer.observation.ObservationRegistry;
 import okhttp3.Interceptor;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.summit42.api.config.Summit42Properties;
@@ -8,6 +9,7 @@ import org.kinotic.system.api.model.llm.LlmConfiguration;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
@@ -21,7 +23,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Builds the {@link ChatClient} the app builder talks to Claude through, from the platform's LLM configuration
- * named by {@link Summit42Properties#getLlmConfigurationName()}.
+ * named by {@link Summit42Properties#getLlmConfigurationName()}. Between the steps of a chat turn, the client gives
+ * Claude the messages the user sent to steer the turn.
  */
 @Component
 @RequiredArgsConstructor
@@ -42,6 +45,7 @@ public class ChatClientFactory {
     private final LlmConfigurationServiceProxy llmConfigurationService;
     private final SecurityContext securityContext;
     private final Summit42Properties properties;
+    private final SteeringToolCallingManager toolCallingManager;
 
     private volatile CachedClient cached;
 
@@ -74,7 +78,11 @@ public class ChatClientFactory {
                                         throw new BuildUnavailableException("The LLM configuration '" + name
                                                                                    + "' holds no API key");
                                     }
-                                    ChatClient client = ChatClient.create(chatModel(configuration, apiKey));
+                                    ChatClient client = ChatClient.builder(chatModel(configuration, apiKey),
+                                                                           ObservationRegistry.NOOP, null, null,
+                                                                           ToolCallingAdvisor.builder()
+                                                                                             .toolCallingManager(toolCallingManager))
+                                                                  .build();
                                     cached = new CachedClient(configuration.getId(), configuration.getUpdated(), client);
                                     return client;
                                 });

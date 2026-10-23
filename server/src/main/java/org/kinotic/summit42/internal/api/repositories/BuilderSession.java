@@ -10,6 +10,8 @@ import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.Conversation;
 import reactor.core.publisher.Flux;
 
+import java.util.List;
+
 /**
  * What the app builder holds for one app: its conversation, and the state the app's chat turns share.
  */
@@ -33,8 +35,8 @@ public class BuilderSession {
     private String lastCommitSha;
 
     /**
-     * Whether a chat turn of the app is running, so a second one, and a reset of the conversation, is refused until
-     * it ends.
+     * Whether a chat turn of the app is running, so no second one starts, and a reset of the conversation is refused,
+     * until it ends.
      */
     private boolean turnRunning;
 
@@ -43,6 +45,12 @@ public class BuilderSession {
      * stream runs.
      */
     private Flux<BuildEvent> turnEvents;
+
+    /**
+     * The messages the user sent to steer the running turn that it has not read yet, in the order they were sent, or
+     * null while no turn takes messages.
+     */
+    private List<String> steeringMessages;
 
     /**
      * Whether the session's app was deleted, after which the session's conversation is not saved and its turn's tools

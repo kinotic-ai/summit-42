@@ -38,7 +38,12 @@ public interface AppBuilderService {
      * app. The turn runs to its end whether or not the stream is still subscribed, and records its reply in the
      * conversation. The stream completes when the turn is over, and ends with an
      * {@link org.kinotic.summit42.api.model.BuildEventType#ERROR} event when the turn fails or another turn of the
-     * app is still running.
+     * app has stopped but not yet ended.
+     * <p>
+     * A message sent while a turn of the app is running steers that turn: Claude reads it after its current step,
+     * the running turn streams it as a {@link org.kinotic.summit42.api.model.BuildEventType#USER_MESSAGE} event at
+     * that point, and the stream this call returns completes at once without events. A message sent as the running
+     * turn finishes, after Claude's last step, starts a turn of its own once that turn has ended.
      *
      * @param applicationId the app's application id
      * @param message       what the user asked for

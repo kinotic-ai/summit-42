@@ -7,6 +7,7 @@ import org.kinotic.domain.api.model.security.participant.DefaultOrganizationPart
 import org.kinotic.summit42.api.model.Conversation;
 import org.kinotic.summit42.internal.api.repositories.BuilderSession;
 
+import java.util.List;
 import java.util.TreeMap;
 
 public class BuilderTurnTests {
@@ -53,6 +54,6 @@ public class BuilderTurnTests {
 
     private static BuilderTurn turnOf(BuilderSession session) {
         return new BuilderTurn(new DefaultOrganizationParticipant("user", "org", null, null), session, "project",
-                               new SkillSet("commit", new TreeMap<>()), event -> {});
+                               new SkillSet("commit", new TreeMap<>()), event -> {}, List::of);
     }
 }

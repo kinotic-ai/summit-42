@@ -52,6 +52,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -195,43 +196,84 @@ public class DefaultAppBuilderService implements AppBuilderService {
                 });
     }
 
+    // a message sent while a turn takes messages steers it, one sent as its stream finishes waits for it to end, and
+    // any other starts a turn unless one is running
     private Flux<BuildEvent> startTurn(OrganizationParticipant participant, BuilderSession session, Project project,
                                        SkillSet skills, String message) {
-        List<Message> prompt = null;
+        Flux<BuildEvent> ret = null;
         synchronized (session) {
-            if (!session.isTurnRunning()) {
+            if (session.getSteeringMessages() != null) {
+                session.getSteeringMessages().add(message);
+                ret = Flux.empty();
+            } else if (session.getTurnEvents() != null) {
+                ret = session.getTurnEvents()
+                             .ignoreElements()
+                             .thenMany(Flux.defer(() -> startTurn(participant, session, project, skills, message)));
+            } else if (session.isTurnRunning()) {
+                ret = Flux.just(BuildEvent.error(TURN_RUNNING));
+            } else {
                 session.setTurnRunning(true);
-                prompt = promptFor(session, project, skills, message);
+                session.setSteeringMessages(new ArrayList<>());
                 session.getConversation().getMessages().add(new ChatMessage(ChatRole.USER, message));
             }
         }
-        Flux<BuildEvent> ret;
-        if (prompt == null) {
-            ret = Flux.just(BuildEvent.error(TURN_RUNNING));
-        } else {
+        if (ret == null) {
             save(session);
-            ret = runTurn(participant, session, project.getId(), skills, prompt);
+            ret = runTurn(participant, session, project, skills);
         }
         return ret;
     }
 
-    private Flux<BuildEvent> runTurn(OrganizationParticipant participant, BuilderSession session, String projectId,
-                                     SkillSet skills, List<Message> prompt) {
+    private Flux<BuildEvent> runTurn(OrganizationParticipant participant, BuilderSession session, Project project,
+                                     SkillSet skills) {
         Sinks.Many<BuildEvent> progress = Sinks.many().unicast().onBackpressureBuffer();
-        BuilderTurn turn = new BuilderTurn(participant, session, projectId, skills,
-                                           event -> progress.emitNext(event, RETRY_CONCURRENT_EMIT));
+        // the turn's reply since the last message it read, and the messages it has finished, which join the
+        // conversation when it ends; both are guarded by the session
         StringBuilder reply = new StringBuilder();
+        List<ChatMessage> finished = new ArrayList<>();
         AtomicBoolean stepSinceText = new AtomicBoolean();
 
+        // each message the user sent to steer the turn is reported where Claude reads it
+        Consumer<List<String>> report =
+                steering -> steering.forEach(message -> progress.emitNext(BuildEvent.userMessage(message), RETRY_CONCURRENT_EMIT));
+        BuilderTurn turn = new BuilderTurn(participant, session, project.getId(), skills,
+                                           event -> progress.emitNext(event, RETRY_CONCURRENT_EMIT),
+                                           () -> {
+                                               List<String> steering = takeSteering(session, reply, finished);
+                                               report.accept(steering);
+                                               return steering;
+                                           });
+
         Flux<BuildEvent> answer =
-                Mono.fromCompletionStage(() -> chatClientFactory.chatClient())
-                    .flatMapMany(client -> client.prompt()
-                                                 .messages(prompt)
-                                                 .tools(tools)
-                                                 .toolContext(Map.of(AppBuilderTools.TURN, turn))
-                                                 .stream()
-                                                 .content())
+                Flux.defer(() -> {
+                        List<Message> prompt;
+                        synchronized (session) {
+                            List<ChatMessage> messages = new ArrayList<>(session.getConversation().getMessages());
+                            messages.addAll(finished);
+                            prompt = promptFor(project, skills, messages);
+                        }
+                        return Mono.fromCompletionStage(() -> chatClientFactory.chatClient())
+                                   .flatMapMany(client -> client.prompt()
+                                                                .messages(prompt)
+                                                                .tools(tools)
+                                                                .toolContext(Map.of(AppBuilderTools.TURN, turn))
+                                                                .stream()
+                                                                .content());
+                    })
                     .map(BuildEvent::text)
+                    // a message sent after Claude's last step gets an answer of its own, to the messages so far ending
+                    // with it; the turn stops taking messages once an answer ends with none sent
+                    .repeat(() -> {
+                        List<String> steering;
+                        synchronized (session) {
+                            steering = takeSteering(session, reply, finished);
+                            if (steering.isEmpty()) {
+                                session.setSteeringMessages(null);
+                            }
+                        }
+                        report.accept(steering);
+                        return !steering.isEmpty();
+                    })
                     .onErrorResume(e -> failure(session.getApplicationKey(), e))
                     // the progress stream ends with the answer, so the merged turn completes with it
                     .doFinally(signal -> progress.emitComplete(RETRY_CONCURRENT_EMIT));
@@ -240,11 +282,11 @@ public class DefaultAppBuilderService implements AppBuilderService {
         // its next message on completion finds the reply recorded and the turn over
         Runnable endTurn = () -> {
             synchronized (session) {
-                if (!reply.isEmpty()) {
-                    session.getConversation().getMessages().add(new ChatMessage(ChatRole.ASSISTANT, reply.toString()));
-                    save(session);
-                }
+                finish(reply, finished);
+                session.getConversation().getMessages().addAll(finished);
+                save(session);
                 session.setTurnEvents(null);
+                session.setSteeringMessages(null);
             }
             turn.release();
         };
@@ -256,10 +298,12 @@ public class DefaultAppBuilderService implements AppBuilderService {
                        if (event.getType() != BuildEventType.TEXT) {
                            stepSinceText.set(true);
                        } else {
-                           if (stepSinceText.getAndSet(false) && !reply.isEmpty()) {
-                               reply.append("\n\n");
+                           synchronized (session) {
+                               if (stepSinceText.getAndSet(false) && !reply.isEmpty()) {
+                                   reply.append("\n\n");
+                               }
+                               reply.append(event.getText());
                            }
-                           reply.append(event.getText());
                        }
                    })
                    .doOnTerminate(endTurn)
@@ -269,6 +313,28 @@ public class DefaultAppBuilderService implements AppBuilderService {
         }
         events.connect();
         return events;
+    }
+
+    // takes the messages sent to steer the turn, after the reply so far, which is finished as a message of its own
+    private static List<String> takeSteering(BuilderSession session, StringBuilder reply, List<ChatMessage> finished) {
+        List<String> ret;
+        synchronized (session) {
+            ret = List.copyOf(session.getSteeringMessages());
+            session.getSteeringMessages().clear();
+            if (!ret.isEmpty()) {
+                finish(reply, finished);
+                ret.forEach(message -> finished.add(new ChatMessage(ChatRole.USER, message)));
+            }
+        }
+        return ret;
+    }
+
+    // the reply so far joins the finished messages as the assistant's, and the next reply starts empty
+    private static void finish(StringBuilder reply, List<ChatMessage> finished) {
+        if (!reply.isEmpty()) {
+            finished.add(new ChatMessage(ChatRole.ASSISTANT, reply.toString()));
+            reply.setLength(0);
+        }
     }
 
     // a conversation that could not be saved stays in this server's memory, so the chat carries on
@@ -378,10 +444,10 @@ public class DefaultAppBuilderService implements AppBuilderService {
         return Flux.just(BuildEvent.error(text));
     }
 
-    // the system prompt, the skills Claude can read, what the app is, the most recent messages of the conversation, and
-    // the new message; tool calls of earlier turns are not kept, so Claude reads the repository again when it needs to
-    private List<Message> promptFor(BuilderSession session, Project project, SkillSet skills, String message) {
-        List<ChatMessage> messages = session.getConversation().getMessages();
+    // the system prompt, the skills Claude can read, what the app is, and the most recent of the messages, which end
+    // with the one to answer; tool calls of earlier answers are not kept, so Claude reads the repository again when it
+    // needs to
+    private List<Message> promptFor(Project project, SkillSet skills, List<ChatMessage> messages) {
         int from = Math.max(0, messages.size() - MAX_HISTORY_MESSAGES);
         // a window that cuts an exchange in two drops the reply whose message it cut off
         if (from > 0 && messages.get(from).getRole() == ChatRole.ASSISTANT) {
@@ -399,7 +465,6 @@ public class DefaultAppBuilderService implements AppBuilderService {
                             ? new UserMessage(chatMessage.getText())
                             : new AssistantMessage(chatMessage.getText()));
         }
-        ret.add(new UserMessage(message));
         return ret;
     }
 
