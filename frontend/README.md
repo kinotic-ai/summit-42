@@ -1,7 +1,8 @@
 # Summit 42 frontend
 
 The chat-only UI of Summit 42: people sign up with GitHub, create and name their apps, describe each one in a chat, and the
-Summit 42 server builds and deploys it as a Kinotic app. A Vue 3 + Vite + TypeScript SPA that signs in to the Kinotic management gateway and
+Summit 42 server builds and deploys it as a Kinotic app. The description given when an app is created is sent as the
+first message of its chat, so the build starts from it. A Vue 3 + Vite + TypeScript SPA that signs in to the Kinotic management gateway and
 talks to `AppBuilderService`, in Kinotic's `management-api` zone, over Kinotic's STOMP connection (`@kinotic-ai/core`).
 The organization and app pages call Kinotic's own services over the same connection, through `@kinotic-ai/management-api`
 and `@kinotic-ai/persistence`, so members, app users, data and deployments are managed here rather than in Kinotic's UIs.

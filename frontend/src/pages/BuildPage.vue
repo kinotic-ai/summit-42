@@ -10,7 +10,7 @@
           <AppIcon name="chat" /> Chat
         </button>
       </div>
-      <p v-if="app.description" class="page-subtitle">{{ app.description }}</p>
+      <p v-if="app.description" class="page-subtitle stage__description" :title="app.description">{{ app.description }}</p>
 
       <span class="stage__spacer" />
 
@@ -165,6 +165,15 @@ async function copyLink() {
   flex-wrap: wrap;
   gap: 0.6rem 0.75rem;
   min-width: 0;
+}
+
+.stage__description {
+  max-width: 48rem;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .stage__spacer {

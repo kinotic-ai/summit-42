@@ -148,6 +148,32 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     @Test
+    public void testCreateAppDescribesTheAppWithClaudesSummaryOfWhatTheUserWants() throws Exception {
+        String wanted = "Customers book grooming appointments for their dogs. Staff see the day's bookings, and each"
+                        + " customer gets a reminder the day before.";
+        anthropic.replyWithText("Books dog grooming ", "appointments and reminds customers.\n");
+
+        BuilderApp app = await(callAs(participant, service -> service.createApp("Grooming", wanted)));
+
+        String summary = "Books dog grooming appointments and reminds customers.";
+        Assertions.assertEquals(summary, app.getDescription());
+        Assertions.assertEquals(summary, applicationService.applicationsOf(organizationId()).values().iterator().next().getDescription());
+        Assertions.assertEquals(summary, projectService.projectsOf(organizationId()).getFirst().getDescription());
+        Assertions.assertEquals(List.of(wanted), textsOf(anthropic.requests().getFirst()));
+    }
+
+    @Test
+    public void testCreateAppWhoseDescriptionCannotBeSummarizedHasNone() throws Exception {
+        anthropic.replyWithError(400);
+
+        BuilderApp app = await(callAs(participant, service -> service.createApp("Grooming", "Customers book grooming")));
+
+        Assertions.assertEquals("Grooming", app.getName());
+        Assertions.assertNull(app.getDescription());
+        Assertions.assertNull(applicationService.applicationsOf(organizationId()).values().iterator().next().getDescription());
+    }
+
+    @Test
     public void testCreateAppDeletesTheApplicationWhenItsProjectCannotBeCreated() {
         projectService.failCreations(organizationId());
 

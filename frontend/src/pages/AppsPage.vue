@@ -27,7 +27,7 @@
       <section v-else-if="APPS.list.length === 0" class="onboard glass">
         <p class="eyebrow">Step 3 of 3</p>
         <h1 class="onboard__title">Name your first app</h1>
-        <p class="muted">Give it a name, then describe it in the chat. Summit 42 builds it, deploys it, and keeps changing it as you talk.</p>
+        <p class="muted">Give it a name and say what it should do. Summit 42 builds it, deploys it, and keeps changing it as you chat.</p>
         <CreateAppForm block @created="open" />
       </section>
 
@@ -59,14 +59,14 @@
             <button type="button" class="app-new" @click="creating = true">
               <AppIcon name="plus" />
               <span class="app-new__title">New app</span>
-              <span class="muted">Name it, then describe it in the chat</span>
+              <span class="muted">Name it and say what it should do</span>
             </button>
           </li>
         </ul>
       </template>
     </div>
 
-    <SideDrawer v-if="creating" title="New app" subtitle="Name it now. You'll describe what it does in the chat." @close="creating = false">
+    <SideDrawer v-if="creating" title="New app" subtitle="Name it and say what it should do. Summit 42 starts building right away." @close="creating = false">
       <CreateAppForm @created="open">
         <template #cancel="{ saving }">
           <button type="button" class="btn btn--secondary" :disabled="saving" @click="creating = false">Cancel</button>

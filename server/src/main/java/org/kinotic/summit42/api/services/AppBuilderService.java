@@ -27,7 +27,8 @@ public interface AppBuilderService {
      * GitHub repository is generated from Kinotic's app template. Requires the organization to have linked GitHub.
      *
      * @param name        the app's name; fails when the organization already has an application with that name
-     * @param description one line on what the app is for, or null
+     * @param description what the user wants the app to do, in their own words, or null; the app's description is
+     *                    Claude's one-line summary of it, or null when it is null or cannot be summarized
      * @return the created app
      */
     Future<BuilderApp> createApp(String name, String description);

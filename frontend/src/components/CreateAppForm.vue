@@ -12,12 +12,13 @@
       <span class="hint">No two of your apps can share a name.</span>
     </div>
     <div class="field">
-      <label for="app-description">What it's for <span class="muted">(optional)</span></label>
-      <input id="app-description"
-             v-model="description"
-             class="input"
-             placeholder="e.g. Customers book grooming appointments for their dogs"
-             autocomplete="off" />
+      <label for="app-description">What should it do? <span class="muted">(optional)</span></label>
+      <textarea id="app-description"
+                v-model="description"
+                class="input"
+                rows="4"
+                placeholder="e.g. Customers book grooming appointments for their dogs, and staff see the day's bookings" />
+      <span class="hint">Summit 42 starts building from this as soon as the app is created.</span>
     </div>
     <div class="create__actions">
       <slot name="cancel" :saving="saving" />
@@ -33,7 +34,7 @@
 import { ref } from 'vue'
 import { createApp, type BuilderApp } from '@/api/appBuilder'
 
-/** Names a new app and creates it in the organization. */
+/** Names and describes a new app and creates it in the organization. */
 defineProps<{
   /** True to stretch the submit button across the form. */
   block?: boolean
