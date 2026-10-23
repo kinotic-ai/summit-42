@@ -6,6 +6,9 @@ import { SESSION } from '@/api/session'
 /** What one event of a chat turn carries. */
 export type BuildEventType = 'TEXT' | 'PROGRESS' | 'APP_READY' | 'ERROR'
 
+/** What a PROGRESS step does: reading the app's files, a skill or the docs; committing files; or deploying. */
+export type BuildStepType = 'READING' | 'COMMITTING' | 'DEPLOYING'
+
 /**
  * One event of a chat turn: TEXT is a chunk of the assistant's reply to append, PROGRESS a one-line status of what
  * the builder is doing, APP_READY carries the deployed app's url, and ERROR the text of what failed, after which
@@ -15,6 +18,20 @@ export interface BuildEvent {
     type: BuildEventType
     text: string | null
     url: string | null
+    /** What the step does, for PROGRESS. */
+    stepType: BuildStepType | null
+}
+
+/** The stages a turn that builds an app moves through, in order. */
+export const BUILD_STAGES = ['PLANNING', 'WRITING', 'DEPLOYING', 'LIVE'] as const
+
+export type BuildStage = typeof BUILD_STAGES[number]
+
+/** Where a running turn is: its stage, a line saying what it is doing, and when it started in epoch milliseconds. */
+export interface BuildProgress {
+    stage: BuildStage
+    detail: string
+    startedAt: number
 }
 
 export type ChatRole = 'USER' | 'ASSISTANT'

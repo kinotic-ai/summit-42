@@ -49,6 +49,12 @@ export async function copyText(text: string): Promise<boolean> {
     return ret
 }
 
+/** A length of time, such as 42s or 1:05. */
+export function formatDuration(ms: number): string {
+    const seconds = Math.floor(Math.max(ms, 0) / 1000)
+    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
 /** Up to two initials of a name or email, for an avatar. */
 export function initialsOf(name: string | null | undefined): string {
     const words = (name ?? '').split(/[\s@._-]+/).filter(word => word.length > 0)

@@ -82,11 +82,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Subscription } from 'rxjs'
 import AppIcon from '@/components/AppIcon.vue'
-import { APP_BUILDER, type BuildEvent, type BuilderApp, type ChatRole, type Conversation } from '@/api/appBuilder'
-import { errorText, hostOf } from '@/api/format'
+import {
+  APP_BUILDER,
+  type BuildEvent,
+  type BuilderApp,
+  type BuildProgress,
+  type BuildStage,
+  type BuildStepType,
+  type ChatRole,
+  type Conversation,
+} from '@/api/appBuilder'
+import { errorText, formatDuration, hostOf } from '@/api/format'
 
 /** One thing the builder did in a turn, as the PROGRESS events report it. */
 interface Step {
@@ -94,6 +103,8 @@ interface Step {
   state: 'active' | 'done' | 'failed'
   /** When the step started, in epoch milliseconds. */
   startedAt: number
+  /** What the step does, or LIVE for the step that reports the app deployed. */
+  type: BuildStepType | 'LIVE' | null
 }
 
 /** A run of the reply's text, or the steps taken between two runs of it. */
@@ -119,8 +130,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** The app was deployed and its UI serves at the url. */
   deployed: [url: string]
-  /** Whether a turn is running. */
-  working: [working: boolean]
+  /** Where the running turn is, or null when no turn is running. */
+  progress: [progress: BuildProgress | null]
   /** The user closed the chat. */
   close: []
 }>()
@@ -135,6 +146,7 @@ const resetting = ref(false)
 // the reply the running turn streams into, the time of its last event, and a clock the elapsed times tick with
 const reply = ref<Turn | null>(null)
 const lastEventAt = ref(0)
+const turnStartedAt = ref(0)
 const now = ref(Date.now())
 
 const scroller = ref<HTMLElement | null>(null)
@@ -157,6 +169,33 @@ const currentStep = computed(() => activeStep.value?.text ?? null)
 // shown once the stream has gone quiet, so it never trails text that is still streaming in
 const thinking = computed(() => streaming.value && activeStep.value === null
                                 && (reply.value?.parts.length === 0 || now.value - lastEventAt.value >= 1000))
+
+// the stage follows the turn's last step: reading plans, a quiet stretch after reading is Claude writing the code it
+// then commits, and deploying runs until the app is live
+const progress = computed<BuildProgress | null>(() => {
+  let ret: BuildProgress | null = null
+  if (streaming.value && reply.value) {
+    const last = lastStepOf(reply.value)
+    let stage: BuildStage = 'PLANNING'
+    if (last?.type === 'LIVE') {
+      stage = 'LIVE'
+    } else if (last?.type === 'DEPLOYING') {
+      stage = 'DEPLOYING'
+    } else if (last?.type === 'COMMITTING' || (last?.type === 'READING' && last.state !== 'active')) {
+      stage = 'WRITING'
+    }
+    let detail = activeStep.value?.text ?? 'Thinking'
+    if (stage === 'LIVE' && last) {
+      detail = last.text
+    } else if (stage === 'WRITING' && !activeStep.value) {
+      detail = 'Writing the code'
+    }
+    ret = { stage, detail, startedAt: turnStartedAt.value }
+  }
+  return ret
+})
+
+watch(progress, value => emit('progress', value))
 
 // the one-line status the header shows when the chat fills the screen and the page behind it is hidden
 const status = computed(() => {
@@ -184,7 +223,7 @@ onBeforeUnmount(() => {
   contentObserver?.disconnect()
   subscription?.unsubscribe()
   stopClock()
-  emit('working', false)
+  emit('progress', null)
 })
 
 function show(conversation: Conversation) {
@@ -200,8 +239,7 @@ function elapsed(since: number): string | null {
   const ms = now.value - since
   let ret: string | null = null
   if (ms >= ELAPSED_SHOWN_AFTER_MS) {
-    const seconds = Math.floor(ms / 1000)
-    ret = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+    ret = formatDuration(ms)
   }
   return ret
 }
@@ -241,9 +279,9 @@ function send() {
   reply.value = turn
   streaming.value = true
   lastEventAt.value = Date.now()
+  turnStartedAt.value = lastEventAt.value
   now.value = lastEventAt.value
   clock = setInterval(() => { now.value = Date.now() }, 1000)
-  emit('working', true)
   void scrollToBottom()
 
   subscription = APP_BUILDER.chat(props.app.applicationId, message).subscribe({
@@ -262,6 +300,12 @@ function send() {
 function activeStepOf(turn: Turn): Step | null {
   const last = turn.parts[turn.parts.length - 1]
   return last?.type === 'steps' ? last.steps.find(step => step.state === 'active') ?? null : null
+}
+
+function lastStepOf(turn: Turn): Step | null {
+  const runs = turn.parts.filter(part => part.type === 'steps')
+  const steps = runs[runs.length - 1]?.steps ?? []
+  return steps[steps.length - 1] ?? null
 }
 
 function settleActiveStep(turn: Turn, state: Step['state']) {
@@ -296,13 +340,13 @@ function apply(turn: Turn, event: BuildEvent) {
     case 'PROGRESS':
       if (event.text && event.text !== currentStep.value) {
         settleActiveStep(turn, 'done')
-        addStep(turn, { text: event.text, state: 'active', startedAt: Date.now() })
+        addStep(turn, { text: event.text, state: 'active', startedAt: Date.now(), type: event.stepType })
       }
       break
     case 'APP_READY':
       settleActiveStep(turn, 'done')
       if (event.url) {
-        addStep(turn, { text: `Live at ${hostOf(event.url)}`, state: 'done', startedAt: Date.now() })
+        addStep(turn, { text: `Live at ${hostOf(event.url)}`, state: 'done', startedAt: Date.now(), type: 'LIVE' })
         emit('deployed', event.url)
       }
       break
@@ -319,7 +363,6 @@ function finishTurn(turn: Turn) {
   subscription = null
   reply.value = null
   stopClock()
-  emit('working', false)
   if (turn.parts.length === 0 && !turn.error) {
     turns.value = turns.value.filter(listed => listed !== turn)
   }

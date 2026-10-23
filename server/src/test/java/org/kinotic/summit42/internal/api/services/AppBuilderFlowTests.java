@@ -20,6 +20,7 @@ import org.kinotic.management.api.model.deployment.UiDeployment;
 import org.kinotic.summit42.api.config.Summit42Properties;
 import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.BuildEventType;
+import org.kinotic.summit42.api.model.BuildStepType;
 import org.kinotic.summit42.api.model.BuilderApp;
 import org.kinotic.summit42.api.model.ChatMessage;
 import org.kinotic.summit42.api.model.ChatRole;
@@ -250,13 +251,13 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         List<BuildEvent> events = chat("todo", "Build a todo app");
         Conversation conversation = await(callAs(participant, service -> service.findConversation("todo")));
 
-        Assertions.assertEquals(List.of("TEXT Let me read the skill first.",
-                                        "PROGRESS Reading the frontend skill",
-                                        "TEXT Now its Vite notes.",
-                                        "PROGRESS Reading references/vite.md of the frontend skill",
-                                        "TEXT Your todo app ",
-                                        "TEXT is ready"),
-                                events.stream().map(event -> event.getType() + " " + event.getText()).toList());
+        Assertions.assertEquals(List.of("TEXT null Let me read the skill first.",
+                                        "PROGRESS READING Reading the frontend skill",
+                                        "TEXT null Now its Vite notes.",
+                                        "PROGRESS READING Reading references/vite.md of the frontend skill",
+                                        "TEXT null Your todo app ",
+                                        "TEXT null is ready"),
+                                events.stream().map(event -> event.getType() + " " + event.getStepType() + " " + event.getText()).toList());
         Assertions.assertEquals("Let me read the skill first.\n\nNow its Vite notes.\n\nYour todo app is ready",
                                 conversation.getMessages().getLast().getText());
     }
@@ -372,6 +373,7 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         List<BuildEvent> events = chat("todo", "Is it deployed?");
 
         Assertions.assertTrue(events.stream().anyMatch(event -> event.getType() == BuildEventType.PROGRESS
+                                                                && event.getStepType() == BuildStepType.DEPLOYING
                                                                 && "Deploying: ready".equals(event.getText())), events.toString());
         Assertions.assertEquals(List.of("https://todo.example"),
                                 events.stream().filter(event -> event.getType() == BuildEventType.APP_READY).map(BuildEvent::getUrl).toList());
