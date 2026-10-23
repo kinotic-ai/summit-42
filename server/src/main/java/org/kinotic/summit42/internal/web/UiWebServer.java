@@ -2,17 +2,23 @@ package org.kinotic.summit42.internal.web;
 
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.net.PemKeyCertOptions;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.healthchecks.HealthCheckHandler;
 import io.vertx.ext.healthchecks.HealthChecks;
 import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.handler.CorsHandler;
 import io.vertx.ext.web.handler.StaticHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.kinotic.domain.api.services.security.SignUpService;
+import org.kinotic.summit42.api.config.SslProperties;
+import org.kinotic.summit42.api.config.Summit42Properties;
 import org.kinotic.summit42.internal.api.services.Summit42EmailTemplates;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -21,8 +27,10 @@ import org.springframework.stereotype.Component;
 /**
  * Serves the Summit 42 UI from the jar's {@code webroot}, answering every path that is not a file with
  * {@code index.html} so the UI's own router handles it. {@code POST /api/signup} with {@code {email, displayName}}
- * starts an email sign-up, emailing a link to this UI's {@code /signup/verify} page, and answers 200, or 400 with
- * {@code {error}}. {@code GET /health} answers 200 while every registered health check passes, and 503 otherwise.
+ * starts an email sign-up, emailing a link to the UI's {@code /signup/verify} page, and answers 200, or 400 with
+ * {@code {error}}; it admits cross-origin calls from {@code summit42.uiBaseUrl}, so a UI served elsewhere can call it.
+ * {@code GET /health} answers 200 while every registered health check passes, and 503 otherwise. The port serves TLS
+ * when {@code summit42.ssl.enabled} is set.
  */
 @Slf4j
 @Component
@@ -39,11 +47,18 @@ public class UiWebServer {
     private final HealthChecks healthChecks;
     private final SignUpService signUpService;
     private final Summit42EmailTemplates emailTemplates;
+    private final Summit42Properties properties;
 
     @EventListener(ApplicationReadyEvent.class)
     public void start() {
         Router router = Router.router(vertx);
         router.get("/health").handler(HealthCheckHandler.createWithHealthChecks(healthChecks));
+        // on every method, so the browser's OPTIONS preflight is answered before the POST route
+        router.route(SIGN_UP_PATH).handler(CorsHandler.create()
+                                                      .addOrigin(properties.getUiBaseUrl())
+                                                      .allowedMethod(HttpMethod.POST)
+                                                      .allowedHeader("Content-Type")
+                                                      .allowCredentials(true));
         router.post(SIGN_UP_PATH)
               .handler(BodyHandler.create().setBodyLimit(SIGN_UP_BODY_LIMIT))
               .handler(this::handleSignUp);
@@ -51,7 +66,13 @@ public class UiWebServer {
         router.get().handler(ctx -> ctx.response()
                                        .putHeader("Content-Type", "text/html; charset=utf-8")
                                        .sendFile(WEBROOT + "/index.html"));
-        HttpServer server = vertx.createHttpServer().requestHandler(router);
+        HttpServerOptions options = new HttpServerOptions();
+        SslProperties ssl = properties.getSsl();
+        if (ssl.isEnabled()) {
+            options.setSsl(true)
+                   .setKeyCertOptions(new PemKeyCertOptions().setCertPath(ssl.getCertPath()).setKeyPath(ssl.getKeyPath()));
+        }
+        HttpServer server = vertx.createHttpServer(options).requestHandler(router);
         server.listen(PORT)
               .onSuccess(s -> log.info("Serving the Summit 42 UI on port {}", s.actualPort()))
               .onFailure(e -> log.error("The Summit 42 UI server could not listen on port {}", PORT, e));

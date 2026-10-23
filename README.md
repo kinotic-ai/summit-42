@@ -44,8 +44,9 @@ no API gateway. Its own settings are:
 
 | Property | Environment variable | Value |
 |---|---|---|
-| `summit42.uiBaseUrl` | `SUMMIT42_UIBASEURL` | Summit 42's UI as a browser reaches it, where the emailed links open, such as `https://dev-summit42.kinotic.ai` |
+| `summit42.uiBaseUrl` | `SUMMIT42_UIBASEURL` | Summit 42's UI as a browser reaches it, where the emailed links open and the one origin `POST /api/signup` admits cross-origin calls from, such as `https://dev-summit42.kinotic.ai` |
 | `summit42.llmConfigurationName` | `SUMMIT42_LLMCONFIGURATIONNAME` | the platform LLM configuration Claude runs with; `summit-42` by default |
+| `summit42.ssl.enabled`, `certPath`, `keyPath` | `SUMMIT42_SSL_ENABLED`, `SUMMIT42_SSL_CERTPATH`, `SUMMIT42_SSL_KEYPATH` | TLS on port 8080 from PEM files; off by default |
 
 Kinotic knows nothing about Summit 42, so the management server it signs users in through needs one setting:
 
@@ -86,12 +87,17 @@ CI (`.github/workflows/build.yml`) builds and tests every push and pull request 
 | Setting | Kind | Value |
 |---|---|---|
 | `DOCKER_HUB_USERNAME`, `DOCKER_HUB_PASSWORD` | secrets | a Docker Hub account that can push `kinoticai/summit-42` |
-| `VITE_KINOTIC_HOST`, `VITE_KINOTIC_PORT`, `VITE_KINOTIC_USE_SSL` | variables | the management gateway the image's UI connects to, such as `dev-api.kinotic.ai`, `443` and `true`; unset, the UI connects to `localhost:58503` |
+| `VITE_KINOTIC_HOST`, `VITE_KINOTIC_PORT`, `VITE_KINOTIC_USE_SSL` | variables | the management gateway the image's UI connects to; unset, the UI connects to `localhost:58503` |
 
 Run the container beside the Kinotic servers, whose management server is configured as
 [Kinotic configuration](#kinotic-configuration) shows, with:
 
 - `KINOTIC_IGNITE_*` set so it joins their cluster;
 - the management server's Elasticsearch, secret storage, email, platform secrets and GitHub App settings, and `SUMMIT42_UIBASEURL`, as [Kinotic configuration](#kinotic-configuration) lists;
-- port 8080 published as `https://dev-summit42.kinotic.ai` on the development server;
-- the UI built with `VITE_KINOTIC_HOST=dev-api.kinotic.ai`, `VITE_KINOTIC_PORT=443` and `VITE_KINOTIC_USE_SSL=true`, as the CI variables above do.
+- port 8080 published where the UI reaches it.
+
+The UI can instead be served apart from the server, as static files from `frontend/dist`, with
+`VITE_SUMMIT42_API_URL` naming the server for the email sign-up. The Kinotic development server does this: its sites
+Worker serves the UI at `https://dev-summit42.kinotic.ai`, and the server is `https://dev-summit42-api.kinotic.ai`
+with `summit42.ssl` on, behind the edge that passes each TLS connection through unopened. Kinotic's
+`deployment/terraform/proxmox` root runs both when the `dev-server` root's `summit42_enabled` is set.
