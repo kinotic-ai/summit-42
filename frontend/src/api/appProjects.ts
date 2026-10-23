@@ -27,6 +27,9 @@ export async function deleteApp(applicationId: string): Promise<void> {
 export function describePhase(phase: DeploymentStatusType | null | undefined): { text: string; kind: 'live' | 'working' | 'danger' | 'idle' } {
     let ret: { text: string; kind: 'live' | 'working' | 'danger' | 'idle' }
     switch (phase) {
+        // a project's finished deployment is RUNNING, a microservice's DEPLOYED, and a UI's READY
+        case DeploymentStatusType.RUNNING:
+        case DeploymentStatusType.DEPLOYED:
         case DeploymentStatusType.READY:
             ret = { text: 'Live', kind: 'live' }
             break
