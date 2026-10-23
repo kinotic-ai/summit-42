@@ -12,12 +12,33 @@ declare module 'vue-router' {
 const router = createRouter({
     history: createWebHistory(),
     routes: [
-        { path: '/', component: () => import('@/pages/WorkspacePage.vue') },
+        {
+            path: '/',
+            component: () => import('@/pages/WorkspaceLayout.vue'),
+            children: [
+                { path: '', component: () => import('@/pages/AppsPage.vue') },
+                { path: 'members', component: () => import('@/pages/MembersPage.vue') },
+                { path: 'settings', component: () => import('@/pages/WorkspaceSettingsPage.vue') },
+            ],
+        },
+        {
+            path: '/apps/:applicationId',
+            component: () => import('@/pages/AppLayout.vue'),
+            children: [
+                { path: '', name: 'build', component: () => import('@/pages/BuildPage.vue') },
+                { path: 'overview', component: () => import('@/pages/AppOverviewPage.vue') },
+                { path: 'data', component: () => import('@/pages/AppDataPage.vue') },
+                { path: 'users', component: () => import('@/pages/AppUsersPage.vue') },
+                { path: 'deployments', component: () => import('@/pages/AppDeploymentsPage.vue') },
+                { path: 'settings', component: () => import('@/pages/AppSettingsPage.vue') },
+            ],
+        },
         { path: GITHUB_CALLBACK_PATH, component: () => import('@/pages/GitHubCallbackPage.vue') },
         { path: '/login', component: () => import('@/pages/LoginPage.vue'), meta: { public: true } },
         { path: '/signup', component: () => import('@/pages/SignupPage.vue'), meta: { public: true } },
         { path: '/signup/verify', component: () => import('@/pages/VerifyEmailPage.vue'), meta: { public: true } },
         { path: '/register', component: () => import('@/pages/RegisterPage.vue'), meta: { public: true } },
+        { path: '/invite/accept', component: () => import('@/pages/InviteAcceptPage.vue'), meta: { public: true } },
         { path: '/:pathMatch(.*)*', redirect: '/' },
     ],
 })

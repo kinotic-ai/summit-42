@@ -18,15 +18,15 @@ import org.kinotic.management.api.model.ProjectType;
 import org.kinotic.management.api.model.RepositoryConnectionStatus;
 import org.kinotic.management.api.model.deployment.DeploymentState;
 import org.kinotic.management.api.model.deployment.UiDeployment;
+import org.kinotic.management.api.services.ApplicationService;
+import org.kinotic.management.api.services.ProjectService;
+import org.kinotic.management.api.services.deployment.UiDeploymentService;
 import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.BuilderApp;
 import org.kinotic.summit42.api.model.ChatMessage;
 import org.kinotic.summit42.api.model.ChatRole;
 import org.kinotic.summit42.api.model.Conversation;
 import org.kinotic.summit42.api.services.AppBuilderService;
-import org.kinotic.summit42.internal.api.proxies.ApplicationServiceProxy;
-import org.kinotic.summit42.internal.api.proxies.ProjectServiceProxy;
-import org.kinotic.summit42.internal.api.proxies.UiDeploymentServiceProxy;
 import org.kinotic.summit42.internal.api.repositories.BuilderSession;
 import org.kinotic.summit42.internal.api.repositories.BuilderSessionRepository;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -38,6 +38,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.util.function.Tuples;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -73,9 +74,9 @@ public class DefaultAppBuilderService implements AppBuilderService {
 
     private final Vertx vertx;
     private final SecurityContext securityContext;
-    private final ApplicationServiceProxy applicationService;
-    private final ProjectServiceProxy projectService;
-    private final UiDeploymentServiceProxy uiDeploymentService;
+    private final ApplicationService applicationService;
+    private final ProjectService projectService;
+    private final UiDeploymentService uiDeploymentService;
     private final BuilderSessionRepository sessionRepository;
     private final ChatClientFactory chatClientFactory;
     private final AppBuilderTools tools;
@@ -112,6 +113,13 @@ public class DefaultAppBuilderService implements AppBuilderService {
                 .setOrganizationId(participant.getOrganizationId())
                 .setTenantManagement(TenantManagement.PLATFORM);
         return callAs(participant, () -> applicationService.createSync(application))
+                // an app deleted earlier under the same name had the same id, and its conversation is not this app's;
+                // one that cannot be deleted is logged rather than failing an app that was created
+                .compose(created -> sessionRepository.deleteById(new ApplicationKey(participant.getOrganizationId(), created.getId()))
+                                                     .onFailure(e -> log.error("The earlier conversation of app {} could not be deleted",
+                                                                               created.getId(), e))
+                                                     .otherwiseEmpty()
+                                                     .map(created))
                 .compose(created -> createProject(participant, created)
                         .compose(project -> buildable(participant, project))
                         .map(project -> new BuilderApp(created.getId(), created.getName(), created.getDescription(), null)));
@@ -126,13 +134,12 @@ public class DefaultAppBuilderService implements AppBuilderService {
             ret = Flux.just(BuildEvent.error("The message is empty"));
         } else {
             // the turn takes the session when the stream is subscribed, so a stream never subscribed holds nothing
-            ret = Mono.fromCompletionStage(() -> findBuildableProject(participant, applicationId).toCompletionStage())
-                      .zipWhen(project -> Mono.fromCompletionStage(() -> kinoticSkills.current().toCompletionStage()))
-                      .flatMapMany(found -> startTurn(participant,
-                                                      sessionRepository.findOrCreate(applicationKey),
-                                                      found.getT1(),
-                                                      found.getT2(),
-                                                      message))
+            ret = Mono.fromCompletionStage(() -> findBuildableProject(participant, applicationId)
+                              .compose(project -> sessionRepository.findById(applicationKey)
+                                                                   .compose(session -> kinoticSkills.current()
+                                                                           .map(skills -> Tuples.of(project, session, skills))))
+                              .toCompletionStage())
+                      .flatMapMany(found -> startTurn(participant, found.getT2(), found.getT1(), found.getT3(), message))
                       .onErrorResume(e -> failure(applicationKey, e));
         }
         return ret;
@@ -140,33 +147,33 @@ public class DefaultAppBuilderService implements AppBuilderService {
 
     @Override
     public Future<Conversation> findConversation(String applicationId) {
-        BuilderSession session = sessionRepository.findById(currentApplicationKey(applicationId));
-        Conversation ret = new Conversation();
-        if (session != null) {
-            synchronized (session) {
-                ret.setMessages(new ArrayList<>(session.getConversation().getMessages()));
-            }
-        }
-        return Future.succeededFuture(ret);
+        OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
+        return findProject(participant, applicationId)
+                .compose(project -> sessionRepository.findById(new ApplicationKey(participant.getOrganizationId(), applicationId)))
+                .map(session -> {
+                    synchronized (session) {
+                        return new Conversation().setMessages(new ArrayList<>(session.getConversation().getMessages()));
+                    }
+                });
     }
 
     @Override
     public Future<Void> resetConversation(String applicationId) {
-        BuilderSession session = sessionRepository.findById(currentApplicationKey(applicationId));
-        Future<Void> ret;
-        if (session == null) {
-            ret = Future.succeededFuture();
-        } else {
-            synchronized (session) {
-                if (session.isTurnRunning()) {
-                    ret = Future.failedFuture(new IllegalStateException(TURN_RUNNING + "; reset the conversation once it is done"));
-                } else {
-                    session.getConversation().getMessages().clear();
-                    ret = Future.succeededFuture();
-                }
-            }
-        }
-        return ret;
+        OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
+        return findProject(participant, applicationId)
+                .compose(project -> sessionRepository.findById(new ApplicationKey(participant.getOrganizationId(), applicationId)))
+                .compose(session -> {
+                    Future<Void> ret;
+                    synchronized (session) {
+                        if (session.isTurnRunning()) {
+                            ret = Future.failedFuture(new IllegalStateException(TURN_RUNNING + "; reset the conversation once it is done"));
+                        } else {
+                            session.getConversation().getMessages().clear();
+                            ret = sessionRepository.save(session);
+                        }
+                    }
+                    return ret;
+                });
     }
 
     private Flux<BuildEvent> startTurn(OrganizationParticipant participant, BuilderSession session, Project project,
@@ -183,6 +190,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
         if (prompt == null) {
             ret = Flux.just(BuildEvent.error(TURN_RUNNING));
         } else {
+            save(session);
             ret = runTurn(participant, session, project.getId(), skills, prompt);
         }
         return ret;
@@ -220,6 +228,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
                 synchronized (session) {
                     if (!reply.isEmpty()) {
                         session.getConversation().getMessages().add(new ChatMessage(ChatRole.ASSISTANT, reply.toString()));
+                        save(session);
                     }
                 }
                 // a cancelled stream leaves the tool call it started running; the turn ends when that returns
@@ -231,10 +240,12 @@ public class DefaultAppBuilderService implements AppBuilderService {
                    .doOnCancel(endTurn);
     }
 
-    private ApplicationKey currentApplicationKey(String applicationId) {
-        OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
-        return new ApplicationKey(participant.getOrganizationId(), applicationId);
+    // a conversation that could not be saved stays in this server's memory, so the chat carries on
+    private void save(BuilderSession session) {
+        sessionRepository.save(session)
+                         .onFailure(e -> log.error("The conversation of app {} could not be saved", session.getApplicationKey(), e));
     }
+
 
     // an application whose project could not be created is deleted, so its name can be used again
     private Future<Project> createProject(OrganizationParticipant participant, Application application) {
@@ -259,12 +270,17 @@ public class DefaultAppBuilderService implements AppBuilderService {
     // the app's project once it can be built in; fails with BuildUnavailableException when the organization has no
     // such app or its repository cannot be used
     private Future<Project> findBuildableProject(OrganizationParticipant participant, String applicationId) {
+        return findProject(participant, applicationId).compose(project -> buildable(participant, project));
+    }
+
+    // the app's project, failing for an id that names no app of the organization
+    private Future<Project> findProject(OrganizationParticipant participant, String applicationId) {
         return callAs(participant, () -> projectService.findAllForApplication(applicationId, Pageable.ofSize(1)))
-                .compose(page -> {
+                .map(page -> {
                     if (page.getContent().isEmpty()) {
                         throw new BuildUnavailableException("This app no longer exists");
                     }
-                    return buildable(participant, page.getContent().getFirst());
+                    return page.getContent().getFirst();
                 });
     }
 

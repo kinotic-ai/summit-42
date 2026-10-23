@@ -27,6 +27,14 @@ public class Summit42Properties {
     private String llmConfigurationName = "summit-42";
 
     /**
+     * Base URL of Summit 42's UI as a browser reaches it (no trailing slash), such as
+     * {@code https://summit42.kinotic.ai}: the UI whose pages the links in Summit 42's invitation and sign-up
+     * verification emails open.
+     */
+    @NotBlank
+    private String uiBaseUrl;
+
+    /**
      * The GitHub API URL of the repository of Kinotic's Claude plugin, whose skills teach Claude to build Kinotic apps.
      */
     @NotBlank

@@ -1,4 +1,4 @@
-package org.kinotic.summit42.internal.api.proxies;
+package org.kinotic.summit42.internal.api.services;
 
 import io.vertx.core.Future;
 import org.kinotic.core.api.annotations.Proxy;

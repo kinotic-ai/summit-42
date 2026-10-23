@@ -1,0 +1,10 @@
+Hi{{#if displayName}} {{displayName}}{{/if}},
+
+Welcome to Summit 42. Verify your email address to finish creating your account:
+
+{{verificationUrl}}
+
+This link expires in 24 hours. If you didn't sign up for Summit 42,
+you can ignore this email.
+
+Summit 42

@@ -36,11 +36,16 @@ dependencyManagement {
         mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
     }
     dependencies {
+        dependency "co.elastic.clients:elasticsearch-java:${elasticClientVersion}"
+        dependency "co.elastic.clients:elasticsearch-rest5-client:${elasticClientVersion}"
         dependency "org.kinotic:kinotic-core:${kinoticVersion}"
         dependency "org.kinotic:kinotic-domain:${kinoticVersion}"
+        dependency "org.kinotic:kinotic-ee:${kinoticVersion}"
         dependency "org.kinotic:kinotic-management-api:${kinoticVersion}"
+        dependency "org.kinotic:kinotic-sql:${kinoticVersion}"
         dependency "org.kinotic:kinotic-system-api:${kinoticVersion}"
         dependency "io.vertx:vertx-core:${vertxVersion}"
+        dependency "io.vertx:vertx-health-check:${vertxVersion}"
         dependency "io.vertx:vertx-web:${vertxVersion}"
         dependency "io.vertx:vertx-web-client:${vertxVersion}"
     }
@@ -48,10 +53,14 @@ dependencyManagement {
 
 dependencies {
     implementation 'org.kinotic:kinotic-core'
-    // For the participant model, the services' model types and the Jackson module the cluster's
-    // events carry them with; Summit42Application excludes these modules' auto-configuration
+    // run in process, as the management server runs them; kinotic-ee holds the secret storage backends its
+    // deployments configure
     implementation 'org.kinotic:kinotic-domain'
+    implementation 'org.kinotic:kinotic-ee'
     implementation 'org.kinotic:kinotic-management-api'
+    // the migrations that create Summit 42's own Elasticsearch index
+    implementation 'org.kinotic:kinotic-sql'
+    // for the types of the system-api services Summit 42 calls; Summit42Application excludes its auto-configuration
     implementation 'org.kinotic:kinotic-system-api'
 
     implementation 'org.springframework.boot:spring-boot-starter'
@@ -60,7 +69,10 @@ dependencies {
     implementation 'org.springframework.ai:spring-ai-anthropic'
     implementation 'org.springframework.ai:spring-ai-openai'
 
+    implementation 'co.elastic.clients:elasticsearch-java'
+
     implementation 'io.vertx:vertx-core'
+    implementation 'io.vertx:vertx-health-check'
     implementation 'io.vertx:vertx-web'
     implementation 'io.vertx:vertx-web-client'
     implementation 'io.projectreactor:reactor-core'
@@ -70,6 +82,9 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'io.projectreactor:reactor-test'
+    testImplementation 'co.elastic.clients:elasticsearch-rest5-client'
+    testImplementation 'org.testcontainers:testcontainers-elasticsearch'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

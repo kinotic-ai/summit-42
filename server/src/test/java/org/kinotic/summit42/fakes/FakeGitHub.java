@@ -79,7 +79,6 @@ public class FakeGitHub implements AutoCloseable {
         return "http://127.0.0.1:" + server.actualPort() + REPOSITORY_PATH;
     }
 
-
     /**
      * Makes every call fail with an HTTP 503, or answer again.
      */

@@ -7,6 +7,7 @@ import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.management.api.model.Project;
 import org.kinotic.management.api.model.RepositoryConnectionStatus;
 import org.kinotic.management.api.model.deployment.ProjectDeployment;
+import org.kinotic.management.api.services.ProjectService;
 
 import java.util.List;
 import java.util.Map;
@@ -19,7 +20,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Holds each organization's projects and their deployments in memory. A project is created with the repository
  * status set for its organization by {@link #createWith}, {@link RepositoryConnectionStatus#CONNECTED} by default.
  */
-public class FakeProjectService extends FakeOrganizationService implements PublishedProjectService {
+public abstract class FakeProjectService extends FakeOrganizationService implements ProjectService {
 
     private final Map<String, List<Project>> projects = new ConcurrentHashMap<>();
     private final Map<String, ProjectDeployment> deployments = new ConcurrentHashMap<>();

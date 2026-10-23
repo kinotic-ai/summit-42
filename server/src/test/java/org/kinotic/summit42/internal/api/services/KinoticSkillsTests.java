@@ -9,13 +9,11 @@ import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.BuildEventType;
 import org.kinotic.summit42.fakes.FakeAnthropic;
 import org.kinotic.summit42.fakes.FakeGitHub;
-import org.kinotic.summit42.fakes.FakeKinoticConfiguration;
 import org.kinotic.summit42.fakes.FakeLlmConfigurationService;
 import org.kinotic.summit42.fakes.FakeProjectService;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
 import org.kinotic.system.api.model.llm.LlmProviderType;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Import;
 
 import java.util.Date;
 import java.util.List;
@@ -24,7 +22,6 @@ import java.util.List;
  * Covers a chat turn while Kinotic's skills cannot be read from GitHub, in a context of its own, so no other test has
  * read the skills before.
  */
-@Import(FakeKinoticConfiguration.class)
 public class KinoticSkillsTests extends AppBuilderServiceTestBase {
 
     @Autowired

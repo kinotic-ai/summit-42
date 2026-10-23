@@ -5,7 +5,9 @@
     "": {
       "name": "summit-42-frontend",
       "dependencies": {
-        "@kinotic-ai/core": "^5.0.0-beta.24",
+        "@kinotic-ai/core": "^5.0.0-beta.26",
+        "@kinotic-ai/management-api": "^5.0.0-beta.63",
+        "@kinotic-ai/persistence": "^5.0.0-beta.16",
         "rxjs": "^7.8.2",
         "vue": "^3.5.44",
         "vue-router": "^5.4.0",
@@ -39,7 +41,13 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@kinotic-ai/core": ["@kinotic-ai/core@5.0.0-beta.24", "", { "dependencies": { "@opentelemetry/api": "^1.9.1", "@opentelemetry/semantic-conventions": "^1.40.0", "@stomp/rx-stomp": "^2.4.0", "@stomp/stompjs": "^7.3.0", "debug": "^4.4.3", "p-tap": "^4.0.0", "rxjs": "^7.8.2", "typescript-optional": "3.0.0-alpha.3", "uuid": "^13.0.0", "ws": "^8.21.0" } }, "sha512-OTgPEtIpH1nqwgoFVuZnqRlY11ZiqSguDMLo5rFN7vNioOLHCSZFZ72YLORJpYmRIPJiMYxCAoNbaWX0ojjojQ=="],
+    "@kinotic-ai/core": ["@kinotic-ai/core@5.0.0-beta.26", "", { "dependencies": { "@kinotic-ai/idl": "^5.0.0-beta.5", "@opentelemetry/api": "^1.9.1", "@opentelemetry/semantic-conventions": "^1.40.0", "@stomp/rx-stomp": "^2.4.0", "@stomp/stompjs": "^7.3.0", "debug": "^4.4.3", "p-tap": "^4.0.0", "rxjs": "^7.8.2", "typescript-optional": "3.0.0-alpha.3", "uuid": "^13.0.0", "ws": "^8.21.0" } }, "sha512-9qOidfQP2iTqHFro58OhgNBdXQimrtntkYt2jL8ko/lFiAo4GWViVu8lecP/WhGvpq6cn3MFxXglqQTNjDlnHA=="],
+
+    "@kinotic-ai/idl": ["@kinotic-ai/idl@5.0.0-beta.5", "", {}, "sha512-i1aNnpDKOqD0yf56w3YmZsoK4a2tM3JBjXxrF+DP0tBrf2RTvuj5wURMrKuacKaeLMkHvuWD9Kyq8s9TFcBRmQ=="],
+
+    "@kinotic-ai/management-api": ["@kinotic-ai/management-api@5.0.0-beta.63", "", { "dependencies": { "@kinotic-ai/idl": "5.0.0-beta.5", "@kinotic-ai/persistence": "5.0.0-beta.16", "rxjs": "^7.8.2" }, "peerDependencies": { "@kinotic-ai/core": "^5.0.0-beta.26" } }, "sha512-5eV6XTJTi2rGKiwIxogobJyur1wfPQ1v5AEhirnRGmtX12Rhfeo7u6VkvHv5V2GmM9612glKDOAuBDru+7j8DA=="],
+
+    "@kinotic-ai/persistence": ["@kinotic-ai/persistence@5.0.0-beta.16", "", { "dependencies": { "@kinotic-ai/idl": "5.0.0-beta.5", "rxjs": "^7.8.2" }, "peerDependencies": { "@kinotic-ai/core": "^5.0.0-beta.26" } }, "sha512-yc2mKCB0CmZz4sviw9M5L0hY6w9SRq+z6YaMmVplwHcAFNkQZKcoZsI+MBOD7ZMfZvqGmeRmjr/Q93P89CEvCA=="],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.1", "", {}, "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="],
 

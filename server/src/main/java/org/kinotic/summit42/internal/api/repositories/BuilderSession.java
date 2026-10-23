@@ -1,5 +1,6 @@
 package org.kinotic.summit42.internal.api.repositories;
 
+import io.vertx.core.Future;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
@@ -17,7 +18,7 @@ public class BuilderSession {
 
     private final ApplicationKey applicationKey;
 
-    private final Conversation conversation = new Conversation();
+    private final Conversation conversation;
 
     /**
      * The last write token issued for the app's repository, or null before the first.
@@ -35,7 +36,19 @@ public class BuilderSession {
      */
     private boolean turnRunning;
 
-    public BuilderSession(ApplicationKey applicationKey) {
+    /**
+     * Whether the session's app was deleted, after which the session's conversation is not saved and its turn's tools
+     * do not run.
+     */
+    private boolean deleted;
+
+    /**
+     * The most recent save of the conversation, which the next save waits for so the saves complete in order.
+     */
+    private Future<Void> lastSave = Future.succeededFuture();
+
+    public BuilderSession(ApplicationKey applicationKey, Conversation conversation) {
         this.applicationKey = applicationKey;
+        this.conversation = conversation;
     }
 }

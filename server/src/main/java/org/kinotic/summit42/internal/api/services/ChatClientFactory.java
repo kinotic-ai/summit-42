@@ -3,7 +3,6 @@ package org.kinotic.summit42.internal.api.services;
 import lombok.RequiredArgsConstructor;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.summit42.api.config.Summit42Properties;
-import org.kinotic.summit42.internal.api.proxies.LlmConfigurationServiceProxy;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
