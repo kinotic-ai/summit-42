@@ -120,6 +120,8 @@ tasks.named('test') {
 
 tasks.named('bootBuildImage') {
     imageName = "kinoticai/summit-42:${project.version}"
+    // the builder's latest tag can be published for one architecture only, which the amd64 CI runners cannot run
+    builder = 'paketobuildpacks/builder-noble-java-tiny:0.0.200'
     environment = [
         'BP_HEALTH_CHECKER_ENABLED'    : 'true',
         'THC_PATH'                     : '/health',
