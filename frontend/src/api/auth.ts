@@ -38,6 +38,15 @@ export function rememberOrganization(organizationId: string): void {
     }
 }
 
+/** Forgets the organization this browser signed in to, so sign-in starts from the choice of organization. */
+export function forgetOrganization(): void {
+    try {
+        localStorage.removeItem(LAST_ORGANIZATION_KEY)
+    } catch {
+        // storage blocked
+    }
+}
+
 /**
  * The organization id named by what a person typed: the id itself, or the organization's name, whose slug is its
  * id. Empty when nothing was typed.

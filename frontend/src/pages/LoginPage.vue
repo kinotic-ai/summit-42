@@ -84,6 +84,12 @@ onMounted(async () => {
     await router.replace(referer.value ?? '/')
     return
   }
+  const remembered = rememberedOrganization()
+  // a browser that signed in before goes straight to its organization's page, unless a sign-in just failed here
+  if (remembered && typeof route.query.error !== 'string') {
+    await router.replace(organizationPage(remembered))
+    return
+  }
   await consumeError()
   try {
     githubOffered.value = (await fetchSocialProviders()).includes(GITHUB_PROVIDER)
@@ -121,7 +127,11 @@ function continueToTyped() {
 }
 
 function continueTo(organizationId: string) {
-  void router.push({ path: `/login/${encodeURIComponent(organizationId)}`, query: referer.value ? { referer: referer.value } : {} })
+  void router.push(organizationPage(organizationId))
+}
+
+function organizationPage(organizationId: string) {
+  return { path: `/login/${encodeURIComponent(organizationId)}`, query: referer.value ? { referer: referer.value } : {} }
 }
 </script>
 

@@ -55,8 +55,8 @@ bun run build        # vue-tsc type-check, then vite build into dist/
 | `/apps/<application id>/deployments` | The deployment's status, live commit, published pages, and a history of each version deployed, published or failed |
 | `/apps/<application id>/settings` | Rename the app, its id and repository, and deleting it |
 | `/github/callback` | Where GitHub's install returns, through Kinotic, with `installation_id`, `state` and `code`: finishes linking GitHub and opens the organization |
-| `/login` | Sign in with GitHub, choosing the organization when the account belongs to several, or name the organization to sign in on its own page |
-| `/login/<organization id>` | The organization's sign-in: the identity providers it offers, and email and password |
+| `/login` | Sign in with GitHub, choosing the organization when the account belongs to several, or name the organization to sign in on its own page; a browser that signed in before opens its last organization's page instead |
+| `/login/<organization id>` | The organization's sign-in: the identity providers it offers, and email and password; "Use another" forgets the organization and returns to `/login` |
 | `/signup` | Create an account with GitHub |
 | `/register?token=` | Where a social sign-up returns: name the organization |
 | `/invite/accept?token=` | The emailed invitation's page: accept an invitation into the organization with any provider it offers or a password, or one into an app with a password, which then opens the app's own sign-in page |

@@ -35,7 +35,7 @@
 
     <p class="switch muted">
       Not your organization?
-      <RouterLink :to="{ path: '/login', query: referer ? { referer } : {} }">Use another</RouterLink>
+      <button type="button" class="link-button" @click="useAnother">Use another</button>
     </p>
 
     <template #footer>
@@ -52,6 +52,7 @@ import HeroPitch from '@/components/HeroPitch.vue'
 import ProviderButton from '@/components/ProviderButton.vue'
 import {
   fetchOrganizationProviders,
+  forgetOrganization,
   type LoginProvider,
   loginWithPassword,
   organizationLoginUrl,
@@ -90,6 +91,12 @@ onMounted(async () => {
     // the password form still works without the provider buttons
   }
 })
+
+// the remembered organization would send /login straight back here
+function useAnother() {
+  forgetOrganization()
+  void router.push({ path: '/login', query: referer.value ? { referer: referer.value } : {} })
+}
 
 async function signIn() {
   signingIn.value = true
