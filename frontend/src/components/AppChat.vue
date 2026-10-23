@@ -18,7 +18,7 @@
       <button type="button" class="icon-btn" aria-label="Close chat" @click="emit('close')"><AppIcon name="close" /></button>
     </header>
 
-    <div ref="scroller" class="chat__messages">
+    <div ref="scroller" class="chat__messages" @scroll="onScroll">
       <div v-if="notice" class="alert alert--error" role="alert">{{ notice }}</div>
 
       <div v-if="loading" class="chat__loading"><span class="spinner" /> Loading the conversation…</div>
@@ -72,7 +72,7 @@
                   aria-label="Message"
                   @keydown="onKeydown"
                   @input="autosize" />
-        <button type="submit" class="btn composer__send" :disabled="!canSend" aria-label="Send">
+        <button type="submit" class="btn composer__send" aria-label="Send">
           <AppIcon name="send" :stroke-width="2.25" />
         </button>
       </form>
@@ -108,6 +108,8 @@ interface Turn {
 
 // a step or a quiet stream shows how long it has run once it has run this long
 const ELAPSED_SHOWN_AFTER_MS = 3000
+// how close to the bottom a reader counts as there, so new output keeps them at the bottom
+const FOLLOW_DISTANCE_PX = 48
 
 /** The chat with the builder about one app; the parent remounts it for another app. */
 const props = defineProps<{
@@ -140,6 +142,9 @@ const input = ref<HTMLTextAreaElement | null>(null)
 
 let subscription: Subscription | null = null
 let clock: ReturnType<typeof setInterval> | null = null
+let contentObserver: MutationObserver | null = null
+// true while the reader is at the bottom of the messages, where new output keeps them
+let following = true
 
 const canSend = computed(() => !streaming.value && !loading.value && loadError.value === null
                                && draft.value.trim().length > 0)
@@ -166,9 +171,17 @@ const status = computed(() => {
   return ret
 })
 
-onMounted(load)
+onMounted(() => {
+  // every change to the messages, streamed text, a new step or the Thinking row alike, keeps a following reader at the bottom
+  contentObserver = new MutationObserver(followNewContent)
+  if (scroller.value) {
+    contentObserver.observe(scroller.value, { childList: true, subtree: true, characterData: true })
+  }
+  void load()
+})
 
 onBeforeUnmount(() => {
+  contentObserver?.disconnect()
   subscription?.unsubscribe()
   stopClock()
   emit('working', false)
@@ -210,7 +223,7 @@ async function load() {
   } finally {
     loading.value = false
   }
-  await scrollToBottom(true)
+  await scrollToBottom()
   input.value?.focus()
 }
 
@@ -231,13 +244,12 @@ function send() {
   now.value = lastEventAt.value
   clock = setInterval(() => { now.value = Date.now() }, 1000)
   emit('working', true)
-  void scrollToBottom(true)
+  void scrollToBottom()
 
   subscription = APP_BUILDER.chat(props.app.applicationId, message).subscribe({
     next: (event: BuildEvent) => {
       lastEventAt.value = Date.now()
       apply(turn, event)
-      void scrollToBottom(false)
     },
     error: (err: unknown) => {
       turn.error = errorText(err, 'The builder stopped unexpectedly.')
@@ -337,14 +349,25 @@ function useIdea(idea: string) {
   })
 }
 
-// follows new content only while the reader is already at the bottom, so scrolling back through history is not interrupted
-async function scrollToBottom(force: boolean) {
+// a reader who scrolls up through history stops following until they scroll back to the bottom
+function onScroll() {
   const el = scroller.value
-  const nearBottom = el !== null && el.scrollHeight - el.scrollTop - el.clientHeight < 120
-  await nextTick()
-  if (el && (force || nearBottom)) {
+  if (el) {
+    following = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_DISTANCE_PX
+  }
+}
+
+function followNewContent() {
+  const el = scroller.value
+  if (el && following) {
     el.scrollTop = el.scrollHeight
   }
+}
+
+async function scrollToBottom() {
+  following = true
+  await nextTick()
+  followNewContent()
 }
 
 async function startOver() {
