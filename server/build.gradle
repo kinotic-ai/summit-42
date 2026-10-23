@@ -51,6 +51,15 @@ dependencyManagement {
     }
 }
 
+configurations {
+    otelAgent {
+        canBeResolved = true
+        canBeConsumed = false
+        // the agent is a self-contained shaded jar; only the single artifact is wanted
+        transitive = false
+    }
+}
+
 dependencies {
     implementation 'org.kinotic:kinotic-core'
     // run in process, as the management server runs them; kinotic-ee holds the secret storage backends its
@@ -86,6 +95,20 @@ dependencies {
     testImplementation 'org.testcontainers:testcontainers-elasticsearch'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    otelAgent "io.opentelemetry.javaagent:opentelemetry-javaagent:${otelJavaagentVersion}"
+}
+
+// The jar embeds the OpenTelemetry Java agent as BOOT-INF/classes/opentelemetry-javaagent.jar, the path a
+// deployment's -javaagent argument points at, as Kinotic's servers do
+tasks.register('otelAgentJar', Sync) {
+    from configurations.otelAgent
+    rename { 'opentelemetry-javaagent.jar' }
+    into layout.buildDirectory.dir('otel-agent')
+}
+
+tasks.named('processResources') {
+    from(tasks.named('otelAgentJar'))
 }
 
 tasks.withType(JavaCompile).configureEach {
