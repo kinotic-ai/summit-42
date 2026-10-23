@@ -1,4 +1,4 @@
-import { apiUrl } from '@/api/server'
+import { apiUrl, SUMMIT42_API_URL } from '@/api/server'
 
 /**
  * The Kinotic management gateway's browser auth routes. Every call sends credentials so the session cookie the
@@ -179,7 +179,7 @@ export function socialSignupUrl(provider: string): string {
 
 /** Starts an email sign-up through the Summit 42 server, which emails a link to this UI's /signup/verify?token=... */
 export async function signUp(email: string, displayName: string): Promise<void> {
-    await postJsonTo('/api/signup', { email, displayName }, 'Sign-up failed')
+    await postJsonTo(SUMMIT42_API_URL + '/api/signup', { email, displayName }, 'Sign-up failed')
 }
 
 /** Finishes an email sign-up, creating the workspace and the account's password, and establishes the session. */
