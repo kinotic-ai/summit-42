@@ -55,7 +55,7 @@ bun run build        # vue-tsc type-check, then vite build into dist/
 | `/apps/<application id>/deployments` | The deployment's status, live commit, published pages and history |
 | `/apps/<application id>/settings` | Rename the app, its id and repository, and deleting it |
 | `/github/callback` | Where GitHub's install returns, through Kinotic, with `installation_id`, `state` and `code`: finishes linking GitHub and opens the workspace |
-| `/login` | Sign in: social buttons, or email and password for the workspace this browser last used |
+| `/login` | Sign in with GitHub, choosing the workspace when the account belongs to several |
 | `/signup` | Create an account with GitHub |
 | `/register?token=` | Where a social sign-up returns: name the workspace |
-| `/invite/accept?token=` | The emailed invitation's page: accept with a password or a sign-in provider; an invitation into an app then opens the app's own sign-in page |
+| `/invite/accept?token=` | The emailed invitation's page: accept an invitation into the workspace with GitHub, or one into an app with a password, which then opens the app's own sign-in page |

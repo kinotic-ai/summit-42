@@ -9,17 +9,17 @@
     </div>
 
     <template v-else-if="invite">
+      <!-- a workspace member builds in the workspace's GitHub, so a workspace invitation is accepted with GitHub -->
       <template v-if="!invite.applicationId">
-        <ProviderButton v-for="provider in invite.providers"
-                        :key="provider.id"
-                        :action="inviteProviderUrl(provider.id, token!)"
-                        :provider="provider.provider"
-                        :label="provider.name || providerDisplayName(provider.provider)"
+        <ProviderButton v-if="inviteGitHub"
+                        :action="inviteProviderUrl(inviteGitHub.id, token!)"
+                        :provider="GITHUB_PROVIDER"
+                        label="GitHub"
                         verb="Accept" />
-        <div v-if="invite.providers.length > 0 && passwordAccepts" class="divider">or</div>
+        <p v-else class="muted">Accepting with GitHub is not available right now. Please try again later.</p>
       </template>
 
-      <form v-if="passwordAccepts" @submit.prevent="accept">
+      <form v-else-if="passwordAccepts" @submit.prevent="accept">
         <div class="field">
           <label for="email">Email</label>
           <input id="email" class="input" type="email" :value="invite.email" readonly />
@@ -68,11 +68,10 @@ import {
   acceptInvite,
   authErrorMessage,
   fetchInvite,
+  GITHUB_PROVIDER,
   type InviteDetails,
   inviteProviderUrl,
-  providerDisplayName,
 } from '@/api/auth'
-import { connect } from '@/api/session'
 
 const route = useRoute()
 const router = useRouter()
@@ -108,7 +107,9 @@ const subtitle = computed(() => {
   return ret
 })
 
-// the existing account's password accepts; an account that only signs in through a provider accepts through it
+const inviteGitHub = computed(() => invite.value?.providers.find(provider => provider.provider === GITHUB_PROVIDER) ?? null)
+
+// an app invitation is accepted with a password: the existing account's password accepts; an account that only signs in through a provider accepts through it
 const existingPassword = computed(() => !!invite.value?.organizationUserExists && invite.value.organizationUserHasPassword)
 const passwordAccepts = computed(() => !invite.value?.organizationUserExists || existingPassword.value)
 
@@ -142,13 +143,7 @@ async function accept() {
   error.value = null
   try {
     const app = await acceptInvite(token, password.value, displayName.value.trim() || null)
-    if (app === null) {
-      if (await connect()) {
-        await router.replace('/')
-      } else {
-        error.value = 'You joined, but this browser did not keep the session. Allow cookies for the Summit 42 server and sign in.'
-      }
-    } else if (app.primaryUiUrl) {
+    if (app?.primaryUiUrl) {
       window.location.assign(app.primaryUiUrl)
     } else {
       accepted.value = true

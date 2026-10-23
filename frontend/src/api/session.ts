@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { Kinotic, type IParticipant } from '@kinotic-ai/core'
-import { hasSession, logout, rememberWorkspace } from '@/api/auth'
+import { hasSession, logout } from '@/api/auth'
 import { KINOTIC_SERVER } from '@/api/server'
 
 /** The signed-in state every page reads. */
@@ -51,9 +51,6 @@ export function connect(): Promise<boolean> {
             SESSION.organizationId = organizationIdOf(connectedInfo.participant)
             SESSION.displayName = connectedInfo.participant?.metadata?.displayName ?? null
             SESSION.email = connectedInfo.participant?.metadata?.email ?? null
-            if (SESSION.organizationId) {
-                rememberWorkspace(SESSION.organizationId)
-            }
             SESSION.connected = true
             ret = true
         }
