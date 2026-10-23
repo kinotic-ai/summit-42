@@ -1,5 +1,6 @@
 package org.kinotic.summit42.internal.api.services;
 
+import io.vertx.core.Future;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -11,12 +12,14 @@ import org.kinotic.domain.api.model.ApplicationKey;
 import org.kinotic.domain.api.model.TenantManagement;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
 import org.kinotic.management.api.model.Project;
+import org.kinotic.management.api.model.ProjectRepoToken;
 import org.kinotic.management.api.model.ProjectType;
 import org.kinotic.management.api.model.RepositoryConnectionStatus;
 import org.kinotic.management.api.model.deployment.DeploymentState;
 import org.kinotic.management.api.model.deployment.DeploymentStatusType;
 import org.kinotic.management.api.model.deployment.ProjectDeployment;
 import org.kinotic.management.api.model.deployment.UiDeployment;
+import org.kinotic.management.api.services.github.ProjectRepoCredentialService;
 import org.kinotic.summit42.api.config.Summit42Properties;
 import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.BuildEventType;
@@ -27,6 +30,7 @@ import org.kinotic.summit42.api.model.ChatRole;
 import org.kinotic.summit42.api.model.Conversation;
 import org.kinotic.summit42.fakes.FakeAnthropic;
 import org.kinotic.summit42.fakes.FakeApplicationService;
+import org.kinotic.summit42.fakes.FakeGitHub;
 import org.kinotic.summit42.fakes.FakeLlmConfigurationService;
 import org.kinotic.summit42.fakes.FakeProjectService;
 import org.kinotic.summit42.fakes.FakeUiDeploymentService;
@@ -35,13 +39,16 @@ import org.kinotic.summit42.internal.api.repositories.BuilderSessionRepository;
 import org.kinotic.summit42.internal.api.repositories.ConversationRepository;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
 import org.kinotic.system.api.model.llm.LlmProviderType;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
@@ -65,6 +72,10 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     private FakeLlmConfigurationService llmConfigurationService;
     @Autowired
     private FakeAnthropic anthropic;
+    @Autowired
+    private FakeGitHub gitHub;
+    @Autowired
+    private ProjectRepoCredentialService repoCredentialService;
     @Autowired
     private BuilderSessionRepository sessionRepository;
     @Autowired
@@ -451,6 +462,81 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     @Test
+    public void testChatAsksAnthropicToCacheThePromptUpToTheLastToolResult() {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        anthropic.replyWithToolCall("readSkill", new JsonObject().put("skill", "frontend"));
+        anthropic.replyWithText("Read it");
+
+        chat("todo", "Build a todo app");
+
+        JsonArray messages = anthropic.requests().getLast().getJsonArray("messages");
+        JsonArray toolResults = messages.getJsonObject(messages.size() - 1).getJsonArray("content");
+        Assertions.assertEquals("ephemeral", toolResults.getJsonObject(toolResults.size() - 1)
+                                                        .getJsonObject("cache_control", new JsonObject())
+                                                        .getString("type"), toolResults.encode());
+    }
+
+    @Test
+    public void testReadFilesReadsEachFileUnderAHeaderInTheOrderAsked() {
+        appRepository(Map.of("packages/ui/src/App.vue", "<h1>Todos</h1>", "README.md", "# Todo"));
+        anthropic.replyWithToolCall("readFiles", new JsonObject().put("paths", new JsonArray().add("packages/ui/src/App.vue")
+                                                                                             .add("missing.ts")
+                                                                                             .add("README.md")));
+        anthropic.replyWithText("Read them");
+
+        chat("todo", "What is in the app?");
+
+        Assertions.assertEquals("=== packages/ui/src/App.vue ===\n<h1>Todos</h1>\n=== missing.ts ===\n(no such file)\n=== README.md ===\n# Todo\n",
+                                Json.decodeValue(toolResultOf(anthropic.requests().getLast())));
+    }
+
+    @Test
+    public void testWriteFilesCommitsEditsAndWholeFilesInOneCommit() {
+        appRepository(Map.of("packages/ui/src/App.vue", "<h1>Todos</h1>\n<p style=\"color: blue\">Due soon</p>\n",
+                             "README.md", "# Todo"));
+        anthropic.replyWithToolCall("writeFiles", new JsonObject()
+                .put("message", "Make it red")
+                .put("edits", new JsonArray().add(edit("packages/ui/src/App.vue", "color: blue", "color: red"))
+                                             .add(edit("packages/ui/src/App.vue", "<h1>Todos</h1>", "<h1>My todos</h1>")))
+                .put("files", new JsonArray().add(new JsonObject().put("path", "packages/ui/src/theme.css").put("content", "h1 { color: red; }"))
+                                             .add(new JsonObject().put("path", "README.md"))));
+        anthropic.replyWithText("Done");
+
+        List<BuildEvent> events = chat("todo", "Make it red");
+
+        Assertions.assertEquals(Map.of("packages/ui/src/App.vue", "<h1>My todos</h1>\n<p style=\"color: red\">Due soon</p>\n",
+                                       "packages/ui/src/theme.css", "h1 { color: red; }"),
+                                gitHub.appFiles());
+        Assertions.assertEquals(List.of("Make it red"), gitHub.commitMessages());
+        Assertions.assertTrue(events.stream().anyMatch(event -> "Committing 3 files: Make it red".equals(event.getText())), events.toString());
+        String toolResult = toolResultOf(anthropic.requests().getLast());
+        Assertions.assertTrue(toolResult.contains("its deployment has started"), toolResult);
+    }
+
+    @Test
+    public void testWriteFilesCommitsNothingWhenTheTextOfAnEditIsNotFoundExactlyOnce() {
+        Map<String, String> files = Map.of("packages/ui/src/App.vue", "<p>blue</p><p>blue</p>");
+        appRepository(files);
+        anthropic.replyWithToolCall("writeFiles", new JsonObject()
+                .put("message", "Make it green")
+                .put("edits", new JsonArray().add(edit("packages/ui/src/App.vue", "green", "red"))));
+        anthropic.replyWithToolCall("writeFiles", new JsonObject()
+                .put("message", "Make it red")
+                .put("files", new JsonArray().add(new JsonObject().put("path", "packages/ui/src/theme.css").put("content", "")))
+                .put("edits", new JsonArray().add(edit("packages/ui/src/App.vue", "blue", "red"))));
+        anthropic.replyWithText("I could not change it");
+
+        chat("todo", "Make it red");
+
+        String notFound = toolResultOf(anthropic.requests().get(1));
+        Assertions.assertTrue(notFound.contains("The text to replace in packages/ui/src/App.vue was not found"), notFound);
+        String twice = toolResultOf(anthropic.requests().get(2));
+        Assertions.assertTrue(twice.contains("The text to replace in packages/ui/src/App.vue occurs more than once"), twice);
+        Assertions.assertEquals(files, gitHub.appFiles());
+        Assertions.assertEquals(List.of(), gitHub.commitMessages());
+    }
+
+    @Test
     public void testWaitForDeploymentReportsTheServingUiAndTheAppsUrl() {
         Project project = deployedProject(new DeploymentState(DeploymentStatusType.READY, COMMIT), null);
         uiDeploymentService.add(ui("todo", project.getId(), "web", COMMIT, "https://todo.example"));
@@ -481,6 +567,20 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         Assertions.assertTrue(events.stream().noneMatch(event -> event.getType() == BuildEventType.APP_READY), events.toString());
         String toolResult = toolResultOf(anthropic.requests().getLast());
         Assertions.assertTrue(toolResult.contains("The deployment failed: vite build failed"), toolResult);
+    }
+
+    // the todo app's project, whose repository on GitHub holds the files given
+    private void appRepository(Map<String, String> files) {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        gitHub.resetAppRepository(files);
+        Mockito.when(repoCredentialService.issueWriteToken(Mockito.anyString()))
+               .thenReturn(Future.succeededFuture(new ProjectRepoToken("repo-token", Instant.now().plus(Duration.ofHours(1)),
+                                                                       "https://github.com/" + FakeGitHub.APP_REPOSITORY + ".git",
+                                                                       FakeGitHub.REF)));
+    }
+
+    private static JsonObject edit(String path, String oldText, String newText) {
+        return new JsonObject().put("path", path).put("oldText", oldText).put("newText", newText);
     }
 
     private String organizationId() {
