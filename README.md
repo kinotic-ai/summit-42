@@ -1,14 +1,20 @@
 # Summit 42
 
-Summit 42 is a chat-only app builder. People sign up, create and name as many apps as they like, and describe each
-one in a chat; Claude builds it as a regular Kinotic application, commits it to the app's GitHub repository and
-deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, and never needs Kinotic's own UIs.
+Summit 42 is a naive clone of [Base 44](https://base44.com), built by extending
+[Kinotic OS](https://github.com/kinotic-ai/kinotic). It is a chat-only app builder: people sign up with GitHub, create and name as
+many apps as they like, and describe each one in a chat; Claude builds it as a regular Kinotic application, commits it
+to the app's GitHub repository and deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, and
+never needs Kinotic's own UIs.
+
+Summit 42 shows what can be built on Kinotic. It runs Kinotic's own modules in process and uses Kinotic's services for
+everything an app needs (organizations, sign-in, invitations, GitHub repositories, deployments, data), so its own code
+is the chat, the tools Claude builds with, and the UI.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `server/` | A Spring Boot member of the Kinotic cluster that runs Kinotic's `kinotic-domain` and `kinotic-management-api` modules in process. It hosts `AppBuilderService` and `InvitationService` in Kinotic's `management-api` zone, and serves the UI's email sign-up route, `POST /api/signup`, and `/health` on port 8080. |
+| `server/` | A Spring Boot member of the Kinotic cluster that runs Kinotic's `kinotic-domain` and `kinotic-management-api` modules in process. It hosts `AppBuilderService` and `InvitationService` in Kinotic's `management-api` zone, and serves `/health` on port 8080. |
 | `frontend/` | The Vue UI, deployed as static files on its own. It signs in to the Kinotic management gateway and chats with `AppBuilderService` over that gateway's STOMP connection. See [frontend/README.md](frontend/README.md). |
 
 ## How it works
@@ -24,8 +30,8 @@ deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, 
 - **The model.** It comes from the platform's LLM configuration named by `summit42.llmConfigurationName` (default `summit-42`). Add that configuration on the system console's **Platform → LLM configurations** page. Summit 42 reads the configuration and its API key as itself, through `SecurityContext.callWithoutParticipant`, since Kinotic gives the key to no call made for a user.
 - **Repositories.** Each app's repository lives in the user's own GitHub account, through the Kinotic GitHub App. The workspace asks the user to connect GitHub before the first app: it starts Kinotic's install with `<UI origin>/github/callback` as the return URL, GitHub returns to the management server, which forwards the browser there with GitHub's `installation_id`, `state` and `code`, and that page finishes the link with `GitHubAppInstallationService.completeInstall`. A signed-out browser signs in first and comes back to the callback. Claude writes the repository with a short-lived token from Kinotic's `ProjectRepoCredentialService`.
 - **Managing apps.** Beside the chat, the UI calls Kinotic's management and persistence services itself, as the signed-in user: workspace members and their invitations (accepted on the UI's own `/invite/accept` page), each app's users, its data, its deployments and history, renaming and deleting it, and the GitHub link. Kinotic scopes each call to the user's organization.
-- **Invitations and sign-up.** Summit 42 sends its invitations and sign-up verifications with its own email templates, in [`server/src/main/resources/email/`](server/src/main/resources/email), whose links open Summit 42's UI at `summit42.uiBaseUrl`. The UI sends invitations through `InvitationService`, which calls Kinotic's `MemberInvitationService` in process as the signed-in user, passing the invitation template. An email sign-up posts to the server's `POST /api/signup`, which calls Kinotic's `SignUpService` with the verification template. Completing a sign-up, and everything else about members, goes to Kinotic directly.
-  An invitation's link opens the UI's `/invite/accept` page, where the invitee sets a password or accepts through a sign-in provider; an invitation into one of the user's apps then sends them to that app's own sign-in page.
+- **Sign-up and invitations.** Every workspace builds its apps in its own GitHub account, so a person signs up, signs in and accepts an invitation into a workspace with GitHub, through Kinotic's social sign-in. People invited into one of the apps accept with a password, since they sign in to the app, not to Summit 42. Summit 42 sends its invitations with its own email template, in [`server/src/main/resources/email/`](server/src/main/resources/email), whose links open Summit 42's UI at `summit42.uiBaseUrl`. The UI sends invitations through `InvitationService`, which calls Kinotic's `MemberInvitationService` in process as the signed-in user, passing the template. Everything else about sign-up and members goes to Kinotic directly.
+  An invitation's link opens the UI's `/invite/accept` page, where the invitee accepts an invitation into the workspace with GitHub, or one into an app with a password, which then sends them to that app's own sign-in page.
 - **Conversations.** Each app has its own, saved in Elasticsearch in the `summit42_conversation` index after each message, so a user finds it again after signing back in or a restart. Summit 42 creates the index with its own migration, [`V1__conversations.sql`](server/src/main/resources/summit42/migrations/V1__conversations.sql), which it applies with Kinotic's migration executor at startup. One turn of an app runs at a time, and its conversation cannot be reset while it runs.
 
 ## Kinotic configuration
@@ -44,7 +50,7 @@ no API gateway. Its own settings are:
 
 | Property | Environment variable | Value |
 |---|---|---|
-| `summit42.uiBaseUrl` | `SUMMIT42_UIBASEURL` | Summit 42's UI as a browser reaches it, where the emailed links open and the one origin `POST /api/signup` admits cross-origin calls from, such as `https://dev-summit42.kinotic.ai` |
+| `summit42.uiBaseUrl` | `SUMMIT42_UIBASEURL` | Summit 42's UI as a browser reaches it, where the emailed links open, such as `https://dev-summit42.kinotic.ai` |
 | `summit42.llmConfigurationName` | `SUMMIT42_LLMCONFIGURATIONNAME` | the platform LLM configuration Claude runs with; `summit-42` by default |
 | `summit42.ssl.enabled`, `certPath`, `keyPath` | `SUMMIT42_SSL_ENABLED`, `SUMMIT42_SSL_CERTPATH`, `SUMMIT42_SSL_KEYPATH` | TLS on port 8080 from PEM files; off by default |
 
@@ -68,8 +74,8 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
    KINOTIC_IGNITE_LOCALADDRESSES=<the Kinotic servers' discovery addresses> \
    ./gradlew :server:bootRun
    ```
-4. Run `bun run dev` in `frontend/` and open `http://localhost:5175`; the dev server forwards the email sign-up to
-   the server on `localhost:8080`.
+4. Run `bun run dev` in `frontend/` and open `http://localhost:5175`. Signing up needs the platform's GitHub sign-in
+   registration.
 
 `./gradlew :server:test` boots the server as the only member of a cluster of its own and calls `AppBuilderService` over Kinotic RPC, so it needs no Kinotic stack. It needs Docker: the tests start Elasticsearch in a container for the saved conversations, and are skipped without Docker. Kinotic's in-process services are replaced by fakes, and the LLM configurations by a fake published on the server's own node, which points at a local fake of Anthropic's API.
 
@@ -83,8 +89,13 @@ The server and the UI deploy separately.
 
 - `KINOTIC_IGNITE_*` set so it joins their cluster;
 - the management server's Elasticsearch, secret storage, email, platform secrets and GitHub App settings, and `SUMMIT42_UIBASEURL`, as [Kinotic configuration](#kinotic-configuration) lists;
-- port 8080 reachable from the UI's browsers, with `summit42.ssl` on unless something in front of it terminates TLS.
+- port 8080 for its health check, with `summit42.ssl` on to serve it over TLS.
 
-**The UI.** `bun run build` in `frontend/` writes static files to `dist/`, built with the `VITE_*` variables naming the management gateway and the server (see [frontend/README.md](frontend/README.md#configuration)). Serve them from any static host that answers unknown paths with `index.html`, at the origin `summit42.uiBaseUrl` names.
+**The UI.** `bun run build` in `frontend/` writes static files to `dist/`, built with the `VITE_*` variables naming the management gateway (see [frontend/README.md](frontend/README.md#configuration)). Serve them from any static host that answers unknown paths with `index.html`, at the origin `summit42.uiBaseUrl` names.
 
 The Kinotic development server runs both: its sites Worker serves the UI at `https://dev-summit42.kinotic.ai`, and the server is `https://dev-summit42-api.kinotic.ai` behind the edge that passes each TLS connection through unopened. Kinotic's `deployment/terraform/proxmox` root runs them when the `dev-server` root's `summit42_enabled` is set, and its `redeploy.sh` builds and uploads the UI from this repository's `main`.
+
+## License
+
+Summit 42 is licensed under the [Elastic License 2.0](LICENSE.md). Kinotic OS and the other components it depends on
+are licensed under their own licenses.

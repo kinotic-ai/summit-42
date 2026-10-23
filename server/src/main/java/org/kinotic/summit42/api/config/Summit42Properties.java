@@ -28,8 +28,7 @@ public class Summit42Properties {
 
     /**
      * Base URL of Summit 42's UI as a browser reaches it (no trailing slash), such as
-     * {@code https://summit42.kinotic.ai}: the UI whose pages the links in Summit 42's invitation and sign-up
-     * verification emails open, and the one origin the server's sign-up route admits cross-origin calls from.
+     * {@code https://summit42.kinotic.ai}: the UI whose pages the links in Summit 42's invitation emails open.
      */
     @NotBlank
     private String uiBaseUrl;

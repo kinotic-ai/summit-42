@@ -5,7 +5,7 @@
       <slot name="hero" />
     </div>
     <div class="auth__inner">
-      <RouterLink v-if="!$slots.hero" to="/" class="auth__brand auth__brand--center"><BrandMark /></RouterLink>
+      <RouterLink v-if="!$slots.hero" to="/" class="auth__brand auth__brand--card"><BrandMark /></RouterLink>
       <section class="auth__card glass">
         <h1 class="auth__title">{{ title }}</h1>
         <p v-if="subtitle" class="auth__subtitle">{{ subtitle }}</p>
@@ -45,6 +45,7 @@ defineProps<{
 }
 
 .auth__inner {
+  --card-padding-x: 1.6rem;
   width: 100%;
   max-width: 25rem;
 }
@@ -59,13 +60,14 @@ defineProps<{
   color: var(--text);
 }
 
-.auth__brand--center {
+/* lines up with the card's left-aligned title, which a centered brand looks shifted right of */
+.auth__brand--card {
   display: flex;
-  justify-content: center;
+  padding-left: var(--card-padding-x);
 }
 
 .auth__card {
-  padding: 1.75rem 1.6rem;
+  padding: 1.75rem var(--card-padding-x);
   border-color: rgba(255, 255, 255, 0.1);
   border-radius: 18px;
   box-shadow: var(--shadow);
@@ -106,8 +108,13 @@ defineProps<{
     padding: 1.5rem 0.75rem;
   }
 
+  .auth__inner {
+    --card-padding-x: 1.1rem;
+  }
+
   .auth__card {
-    padding: 1.4rem 1.1rem;
+    padding-top: 1.4rem;
+    padding-bottom: 1.4rem;
   }
 }
 </style>

@@ -1,8 +1,12 @@
 <template>
   <AuthShell title="Welcome back" :subtitle="workspace ? `Sign in to the ${workspace} workspace.` : 'Sign in to keep building.'">
+    <template #hero>
+      <HeroPitch />
+    </template>
+
     <div v-if="error" class="alert alert--error" role="alert">{{ error }}</div>
 
-    <!-- the workspaces a social sign-in found the account a member of; the person picks one -->
+    <!-- the workspaces a GitHub sign-in found the account a member of; the person picks one -->
     <div v-if="choices.length > 0" class="choices">
       <p class="muted">Your account belongs to several workspaces. Choose one to sign in to.</p>
       <button v-for="choice in choices"
@@ -12,62 +16,19 @@
               @click="selectWorkspace(choice)">
         {{ choice }}
       </button>
-      <div class="divider">or</div>
     </div>
 
-    <template v-if="workspace">
-      <ProviderButton v-for="provider in workspaceProviders"
-                      :key="provider.id"
-                      :action="workspaceLoginUrl(workspace, provider.id, referer)"
-                      :provider="provider.provider"
-                      :label="provider.name || providerDisplayName(provider.provider)"
-                      verb="Continue" />
-      <div v-if="workspaceProviders.length > 0" class="divider">or</div>
+    <ProviderButton v-else-if="workspace && workspaceGitHub"
+                    :action="workspaceLoginUrl(workspace, workspaceGitHub.id, referer)"
+                    :provider="GITHUB_PROVIDER"
+                    label="GitHub"
+                    verb="Continue" />
 
-      <form @submit.prevent="signIn">
-        <div class="field">
-          <label for="email">Email</label>
-          <input id="email" v-model="email" class="input" type="email" autocomplete="email" required />
-        </div>
-        <div class="field">
-          <label for="password">Password</label>
-          <input id="password" v-model="password" class="input" type="password" autocomplete="current-password" required />
-        </div>
-        <button type="submit" class="btn btn--block" :disabled="signingIn">
-          <span v-if="signingIn" class="spinner" />
-          Sign in
-        </button>
-      </form>
-      <p class="switch muted">
-        Not your workspace?
-        <button type="button" class="link-button" @click="forgetWorkspace">Use another</button>
-      </p>
-    </template>
-
-    <template v-else>
-      <ProviderButton v-for="provider in socialProviders"
-                      :key="provider"
-                      :action="socialLoginUrl(provider, referer)"
-                      :provider="provider"
-                      :label="providerDisplayName(provider)"
-                      verb="Continue" />
-      <div v-if="socialProviders.length > 0" class="divider">or</div>
-
-      <form @submit.prevent="useWorkspace">
-        <div class="field">
-          <label for="workspace">Workspace id</label>
-          <input id="workspace"
-                 v-model="workspaceInput"
-                 class="input"
-                 autocapitalize="none"
-                 autocorrect="off"
-                 spellcheck="false"
-                 placeholder="e.g. janes-apps" />
-          <span class="hint">Signed up with email and password? Enter your workspace name or id.</span>
-        </div>
-        <button type="submit" class="btn btn--secondary btn--block">Continue with email</button>
-      </form>
-    </template>
+    <ProviderButton v-else-if="offered"
+                    :action="socialLoginUrl(GITHUB_PROVIDER, referer)"
+                    :provider="GITHUB_PROVIDER"
+                    label="GitHub"
+                    verb="Continue" />
 
     <template #footer>
       New to Summit 42? <RouterLink to="/signup">Create an account</RouterLink>
@@ -79,33 +40,29 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/components/AuthShell.vue'
+import HeroPitch from '@/components/HeroPitch.vue'
 import ProviderButton from '@/components/ProviderButton.vue'
 import {
   authErrorMessage,
   fetchSocialProviders,
   fetchWorkspaceChoices,
   fetchWorkspaceProviders,
+  GITHUB_PROVIDER,
   type LoginProvider,
-  loginWithPassword,
-  providerDisplayName,
-  rememberedWorkspace,
-  rememberWorkspace,
   socialLoginUrl,
   workspaceLoginUrl,
 } from '@/api/auth'
-import { connect, SESSION } from '@/api/session'
+import { SESSION } from '@/api/session'
+
+const UNAVAILABLE = 'Signing in with GitHub is not available right now. Please try again later.'
 
 const route = useRoute()
 const router = useRouter()
 
-const workspace = ref<string | null>(rememberedWorkspace())
-const workspaceInput = ref('')
-const workspaceProviders = ref<LoginProvider[]>([])
-const socialProviders = ref<string[]>([])
+const offered = ref(false)
 const choices = ref<string[]>([])
-const email = ref('')
-const password = ref('')
-const signingIn = ref(false)
+const workspace = ref<string | null>(null)
+const workspaceGitHub = ref<LoginProvider | null>(null)
 const error = ref<string | null>(null)
 
 // the page the router guard sent the visitor here from, where a sign-in returns to; only a path within this UI
@@ -122,7 +79,14 @@ onMounted(async () => {
     return
   }
   await consumeError()
-  await loadProviders()
+  try {
+    offered.value = (await fetchSocialProviders()).includes(GITHUB_PROVIDER)
+  } catch {
+    // an unreachable gateway leaves offered false, which shows UNAVAILABLE
+  }
+  if (!offered.value && choices.value.length === 0) {
+    error.value ??= UNAVAILABLE
+  }
 })
 
 // the gateway's redirects land here with ?error=<code>; the error is cleared so a refresh does not repeat it, and the
@@ -144,72 +108,20 @@ async function consumeError() {
   }
 }
 
-async function loadProviders() {
+// a workspace's sign-in lists the platform's GitHub registration, which signs the account in to that workspace
+async function selectWorkspace(organizationId: string) {
+  error.value = null
   try {
-    if (workspace.value) {
-      const offered = await fetchWorkspaceProviders(workspace.value)
-      if (offered === null) {
-        error.value = `There is no workspace with the id "${workspace.value}".`
-        workspace.value = null
-        rememberWorkspace(null)
-      } else {
-        workspaceProviders.value = offered
-      }
-    }
-    if (!workspace.value) {
-      socialProviders.value = await fetchSocialProviders()
-    }
+    const providers = await fetchWorkspaceProviders(organizationId)
+    workspaceGitHub.value = providers?.find(provider => provider.provider === GITHUB_PROVIDER) ?? null
   } catch {
-    // the password form still works without the provider buttons
+    workspaceGitHub.value = null
   }
-}
-
-function selectWorkspace(organizationId: string) {
-  choices.value = []
-  error.value = null
-  workspace.value = organizationId
-  void loadProviders()
-}
-
-function useWorkspace() {
-  const id = toWorkspaceId(workspaceInput.value)
-  if (!id) {
-    error.value = 'Enter your workspace name or id.'
-    return
-  }
-  selectWorkspace(id)
-}
-
-// a workspace id is its name slugified, so the name the user signed up with finds it too
-function toWorkspaceId(input: string): string {
-  return input.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    .replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, '')
-}
-
-function forgetWorkspace() {
-  workspace.value = null
-  workspaceProviders.value = []
-  rememberWorkspace(null)
-  void loadProviders()
-}
-
-async function signIn() {
-  if (!workspace.value) return
-  signingIn.value = true
-  error.value = null
-  try {
-    await loginWithPassword(workspace.value, email.value.trim(), password.value)
-    rememberWorkspace(workspace.value)
-    if (await connect()) {
-      await router.replace(referer.value ?? '/')
-    } else {
-      error.value = 'You were signed in, but this browser did not keep the session. Allow cookies for the Summit 42 server and try again.'
-    }
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Invalid credentials'
-    password.value = ''
-  } finally {
-    signingIn.value = false
+  if (workspaceGitHub.value) {
+    workspace.value = organizationId
+    choices.value = []
+  } else {
+    error.value = UNAVAILABLE
   }
 }
 </script>
@@ -223,11 +135,5 @@ async function signIn() {
 
 .choices p {
   margin: 0 0 0.25rem;
-}
-
-.switch {
-  margin: 1rem 0 0;
-  text-align: center;
-  font-size: 0.9rem;
 }
 </style>

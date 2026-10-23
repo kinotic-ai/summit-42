@@ -1,4 +1,4 @@
-import { apiUrl, SUMMIT42_API_URL } from '@/api/server'
+import { apiUrl } from '@/api/server'
 
 /**
  * The Kinotic management gateway's browser auth routes. Every call sends credentials so the session cookie the
@@ -12,46 +12,8 @@ export interface LoginProvider {
     provider: string | null
 }
 
-const WORKSPACE_KEY = 'summit42.organizationId'
-const SIGNUP_NAME_KEY = 'summit42.signupDisplayName'
-
-function readStored(key: string): string | null {
-    try {
-        return localStorage.getItem(key)
-    } catch {
-        return null
-    }
-}
-
-function writeStored(key: string, value: string | null): void {
-    try {
-        if (value === null) {
-            localStorage.removeItem(key)
-        } else {
-            localStorage.setItem(key, value)
-        }
-    } catch {
-        // storage blocked (private mode): the value is only a convenience
-    }
-}
-
-/** The id of the organization (workspace) this browser last signed in to, or null. */
-export function rememberedWorkspace(): string | null {
-    return readStored(WORKSPACE_KEY)
-}
-
-export function rememberWorkspace(organizationId: string | null): void {
-    writeStored(WORKSPACE_KEY, organizationId)
-}
-
-/** The display name given at email sign-up, kept to prefill the workspace name once the email is verified. */
-export function rememberedSignupName(): string | null {
-    return readStored(SIGNUP_NAME_KEY)
-}
-
-export function rememberSignupName(displayName: string | null): void {
-    writeStored(SIGNUP_NAME_KEY, displayName)
-}
+/** The provider key of GitHub, the one way to sign up for and sign in to Summit 42. */
+export const GITHUB_PROVIDER = 'github'
 
 /** The gateway's {"error": "..."} message from a failed response, or the fallback. */
 async function readError(res: Response, fallback: string): Promise<string> {
@@ -68,11 +30,7 @@ async function readError(res: Response, fallback: string): Promise<string> {
 }
 
 async function postJson(path: string, body: unknown, fallbackError: string): Promise<Response> {
-    return postJsonTo(apiUrl(path), body, fallbackError)
-}
-
-async function postJsonTo(url: string, body: unknown, fallbackError: string): Promise<Response> {
-    const res = await fetch(url, {
+    const res = await fetch(apiUrl(path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -102,11 +60,6 @@ export async function logout(): Promise<void> {
     if (!res.ok) {
         throw new Error('Sign-out failed. Please try again.')
     }
-}
-
-/** Signs a member of the organization in with email and password, establishing the session. */
-export async function loginWithPassword(organizationId: string, email: string, password: string): Promise<void> {
-    await postJson(`/api/auth/org/login/${encodeURIComponent(organizationId)}`, { email, password }, 'Invalid credentials')
 }
 
 /** The provider keys (e.g. "github") of the platform's social registrations, offered when no workspace is known. */
@@ -177,16 +130,6 @@ export function socialSignupUrl(provider: string): string {
     return apiUrl('/api/auth/org/signup/social/start/' + encodeURIComponent(provider))
 }
 
-/** Starts an email sign-up through the Summit 42 server, which emails a link to this UI's /signup/verify?token=... */
-export async function signUp(email: string, displayName: string): Promise<void> {
-    await postJsonTo(SUMMIT42_API_URL + '/api/signup', { email, displayName }, 'Sign-up failed')
-}
-
-/** Finishes an email sign-up, creating the workspace and the account's password, and establishes the session. */
-export async function completeSignUp(token: string, orgName: string, password: string): Promise<void> {
-    await postJson('/api/auth/org/signup/complete', { token, orgName, orgDescription: null, password }, 'Could not create your workspace')
-}
-
 /** Finishes a social sign-up, creating the workspace, and establishes the session. */
 export async function completeSocialSignUp(token: string, orgName: string): Promise<void> {
     await postJson('/api/auth/org/signup/social/complete', { token, orgName, orgDescription: null }, 'Could not create your workspace')
@@ -243,30 +186,17 @@ export function inviteProviderUrl(configurationId: string, token: string): strin
     return apiUrl(`/api/auth/invite/oidc/start/${encodeURIComponent(configurationId)}?token=${encodeURIComponent(token)}`)
 }
 
-/** The name a provider key is shown by on its button. */
-export function providerDisplayName(provider: string | null): string {
-    let ret: string
-    switch (provider) {
-        case 'azure-ad': ret = 'Microsoft'; break
-        case 'github': ret = 'GitHub'; break
-        case 'google': ret = 'Google'; break
-        case null: ret = 'your provider'; break
-        default: ret = provider.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')
-    }
-    return ret
-}
-
 /** The message for an ?error= code the gateway's redirects put on /login or /invite/accept. */
 export function authErrorMessage(code: string): string {
     let ret: string
     switch (code) {
-        case 'no_account': ret = 'No account is linked to that sign-in. Create one, or sign in with your workspace id and password.'; break
+        case 'no_account': ret = 'No account is linked to that GitHub account. Create one first.'; break
         case 'multiple_organizations': ret = 'Your account belongs to several workspaces, but the choice expired. Please sign in again.'; break
         case 'account_exists': ret = 'An account already exists for that email or identity. Sign in instead.'; break
         case 'account_disabled':
         case 'user_disabled': ret = 'This account cannot sign in to the workspace.'; break
-        case 'email_mismatch': ret = 'That sign-in uses a different email from the one invited. Use the invited address, or accept with a password.'; break
-        case 'user_exists': ret = 'An account already uses this email. Accept with its password instead.'; break
+        case 'email_mismatch': ret = 'That GitHub account uses a different email from the one invited. Use a GitHub account with the invited address.'; break
+        case 'user_exists': ret = 'An account already uses this email. Sign in with it instead.'; break
         case 'invite_invalid': ret = 'This invitation is no longer valid. Ask whoever invited you for a new one.'; break
         case 'config_not_found': ret = 'That sign-in method is not offered for this invitation.'; break
         case 'email_not_verified': ret = 'Your provider has not verified your email address.'; break

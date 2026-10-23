@@ -7,8 +7,6 @@ interface ImportMetaEnv {
     readonly VITE_KINOTIC_PORT?: string
     /** "true" to reach the gateway over TLS; defaults to false. */
     readonly VITE_KINOTIC_USE_SSL?: string
-    /** Base URL of the Summit 42 server, such as https://dev-summit42-api.kinotic.ai; defaults to this page's origin. */
-    readonly VITE_SUMMIT42_API_URL?: string
 }
 
 interface ImportMeta {
