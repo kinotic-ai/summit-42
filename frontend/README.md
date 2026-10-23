@@ -48,7 +48,7 @@ bun run build        # vue-tsc type-check, then vite build into dist/
 | `/` | The organization's apps: connecting GitHub, creating an app, and a card per app with its link (every signed-in page redirects to `/login?referer=<path>` without a session, which returns there after signing in) |
 | `/members` | The organization's members: invite, resend or cancel an invitation, disable, enable or remove |
 | `/settings` | The organization's GitHub link, the identity providers its members sign in with (add, edit with the callback URL to register at the provider, turn on or off, delete), and the link to its sign-in page |
-| `/apps/<application id>` | Build: a card tracking the running build's stage (planning, writing code, deploying, live) and its elapsed time, or the app's link once live, beside the chat with the builder, which shows each step of a build as it runs, between the parts of Claude's reply, and how long the current step or Claude's thinking has taken |
+| `/apps/<application id>` | Build: a card tracking the running build's stage (planning, writing code, deploying, live) and its elapsed time, or the app's link once live, beside the chat with the builder, which shows each step of a build as it runs, between the parts of Claude's reply, and how long the current step or Claude's thinking has taken. Coming back to the chat during a build replays its steps so far and follows it live |
 | `/apps/<application id>/overview` | The app's link, status, data types, users, repository and recent deployments |
 | `/apps/<application id>/data` | The records of each of the app's entity types, searchable and paged |
 | `/apps/<application id>/users` | The people who sign in to the app: invite, disable, enable or remove |

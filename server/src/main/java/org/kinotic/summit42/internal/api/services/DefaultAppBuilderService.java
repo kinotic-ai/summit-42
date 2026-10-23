@@ -36,6 +36,7 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.ConnectableFlux;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -147,6 +148,23 @@ public class DefaultAppBuilderService implements AppBuilderService {
     }
 
     @Override
+    public Flux<BuildEvent> followRunningTurn(String applicationId) {
+        OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
+        ApplicationKey applicationKey = new ApplicationKey(participant.getOrganizationId(), applicationId);
+        return Mono.fromCompletionStage(() -> findProject(participant, applicationId)
+                           .compose(project -> sessionRepository.findById(applicationKey))
+                           .toCompletionStage())
+                   .flatMapMany(session -> {
+                       Flux<BuildEvent> events;
+                       synchronized (session) {
+                           events = session.getTurnEvents();
+                       }
+                       return events != null ? events : Flux.<BuildEvent>empty();
+                   })
+                   .onErrorResume(e -> failure(applicationKey, e));
+    }
+
+    @Override
     public Future<Conversation> findConversation(String applicationId) {
         OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
         return findProject(participant, applicationId)
@@ -202,10 +220,8 @@ public class DefaultAppBuilderService implements AppBuilderService {
         Sinks.Many<BuildEvent> progress = Sinks.many().unicast().onBackpressureBuffer();
         BuilderTurn turn = new BuilderTurn(participant, session, projectId, skills,
                                            event -> progress.emitNext(event, RETRY_CONCURRENT_EMIT));
-        // appended on the turn's stream and read by a cancel on another thread
-        StringBuffer reply = new StringBuffer();
+        StringBuilder reply = new StringBuilder();
         AtomicBoolean stepSinceText = new AtomicBoolean();
-        AtomicBoolean ended = new AtomicBoolean();
 
         Flux<BuildEvent> answer =
                 Mono.fromCompletionStage(() -> chatClientFactory.chatClient())
@@ -220,21 +236,21 @@ public class DefaultAppBuilderService implements AppBuilderService {
                     // the progress stream ends with the answer, so the merged turn completes with it
                     .doFinally(signal -> progress.emitComplete(RETRY_CONCURRENT_EMIT));
 
-        // runs before the stream's completion reaches the client, so a client that reads the conversation or sends its
-        // next message on completion finds the reply recorded and the turn over
+        // runs before the stream's completion reaches a subscriber, so a client that reads the conversation or sends
+        // its next message on completion finds the reply recorded and the turn over
         Runnable endTurn = () -> {
-            if (ended.compareAndSet(false, true)) {
-                synchronized (session) {
-                    if (!reply.isEmpty()) {
-                        session.getConversation().getMessages().add(new ChatMessage(ChatRole.ASSISTANT, reply.toString()));
-                        save(session);
-                    }
+            synchronized (session) {
+                if (!reply.isEmpty()) {
+                    session.getConversation().getMessages().add(new ChatMessage(ChatRole.ASSISTANT, reply.toString()));
+                    save(session);
                 }
-                // a cancelled stream leaves the tool call it started running; the turn ends when that returns
-                turn.release();
+                session.setTurnEvents(null);
             }
+            turn.release();
         };
-        return Flux.merge(answer, progress.asFlux())
+        // connected here rather than by a subscriber, so the turn runs to its end when the chat that started it goes
+        // away, and a chat that comes back follows it from its first event through followRunningTurn
+        ConnectableFlux<BuildEvent> events = Flux.merge(answer, progress.asFlux())
                    .doOnNext(event -> {
                        // text resumed after a tool call's step starts a new paragraph, as the chat shows it apart
                        if (event.getType() != BuildEventType.TEXT) {
@@ -247,7 +263,12 @@ public class DefaultAppBuilderService implements AppBuilderService {
                        }
                    })
                    .doOnTerminate(endTurn)
-                   .doOnCancel(endTurn);
+                   .replay();
+        synchronized (session) {
+            session.setTurnEvents(events);
+        }
+        events.connect();
+        return events;
     }
 
     // a conversation that could not be saved stays in this server's memory, so the chat carries on

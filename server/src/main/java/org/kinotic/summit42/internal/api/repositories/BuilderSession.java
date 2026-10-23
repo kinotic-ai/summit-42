@@ -6,7 +6,9 @@ import lombok.Setter;
 import lombok.experimental.Accessors;
 import org.kinotic.domain.api.model.ApplicationKey;
 import org.kinotic.management.api.model.ProjectRepoToken;
+import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.Conversation;
+import reactor.core.publisher.Flux;
 
 /**
  * What the app builder holds for one app: its conversation, and the state the app's chat turns share.
@@ -35,6 +37,12 @@ public class BuilderSession {
      * it ends.
      */
     private boolean turnRunning;
+
+    /**
+     * The events of the running turn's stream from its start, replayed to each subscriber, or null while no turn's
+     * stream runs.
+     */
+    private Flux<BuildEvent> turnEvents;
 
     /**
      * Whether the session's app was deleted, after which the session's conversation is not saved and its turn's tools

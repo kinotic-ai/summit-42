@@ -31,19 +31,24 @@ public class BuildEvent {
      */
     private BuildStepType stepType;
 
+    /**
+     * When the event happened, in epoch milliseconds.
+     */
+    private long timestamp;
+
     public static BuildEvent text(String text) {
-        return new BuildEvent(BuildEventType.TEXT, text, null, null);
+        return new BuildEvent(BuildEventType.TEXT, text, null, null, System.currentTimeMillis());
     }
 
     public static BuildEvent progress(BuildStepType stepType, String text) {
-        return new BuildEvent(BuildEventType.PROGRESS, text, null, stepType);
+        return new BuildEvent(BuildEventType.PROGRESS, text, null, stepType, System.currentTimeMillis());
     }
 
     public static BuildEvent appReady(String url) {
-        return new BuildEvent(BuildEventType.APP_READY, null, url, null);
+        return new BuildEvent(BuildEventType.APP_READY, null, url, null, System.currentTimeMillis());
     }
 
     public static BuildEvent error(String text) {
-        return new BuildEvent(BuildEventType.ERROR, text, null, null);
+        return new BuildEvent(BuildEventType.ERROR, text, null, null, System.currentTimeMillis());
     }
 }

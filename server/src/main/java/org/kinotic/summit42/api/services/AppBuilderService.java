@@ -35,7 +35,8 @@ public interface AppBuilderService {
     /**
      * Sends the user's message about the app and streams Claude's turn: its reply as
      * {@link org.kinotic.summit42.api.model.BuildEventType#TEXT} chunks, interleaved with what it is doing to the
-     * app. The stream completes when the turn is over, and ends with an
+     * app. The turn runs to its end whether or not the stream is still subscribed, and records its reply in the
+     * conversation. The stream completes when the turn is over, and ends with an
      * {@link org.kinotic.summit42.api.model.BuildEventType#ERROR} event when the turn fails or another turn of the
      * app is still running.
      *
@@ -44,6 +45,16 @@ public interface AppBuilderService {
      * @return the turn's events
      */
     Flux<BuildEvent> chat(String applicationId, String message);
+
+    /**
+     * Streams the app's running turn as {@link #chat} does, from the turn's first event: the events it has sent so
+     * far, then the rest as they happen. Completes at once when no turn of the app is running, as when the turn
+     * ended before the call, whose reply the conversation then holds.
+     *
+     * @param applicationId the app's application id
+     * @return the running turn's events
+     */
+    Flux<BuildEvent> followRunningTurn(String applicationId);
 
     /**
      * @param applicationId the app's application id
