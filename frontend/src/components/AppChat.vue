@@ -72,9 +72,8 @@
                   aria-label="Message"
                   @keydown="onKeydown"
                   @input="autosize" />
-        <button type="submit" class="btn composer__send" :disabled="!canSend" :aria-label="streaming ? 'Working' : 'Send'">
-          <span v-if="streaming" class="spinner" />
-          <AppIcon v-else name="send" :stroke-width="2.25" />
+        <button type="submit" class="btn composer__send" :disabled="!canSend" aria-label="Send">
+          <AppIcon name="send" :stroke-width="2.25" />
         </button>
       </form>
       <p class="composer__hint">Enter to send · Shift+Enter for a new line</p>
