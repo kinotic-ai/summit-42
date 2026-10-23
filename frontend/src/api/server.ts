@@ -13,9 +13,6 @@ export const KINOTIC_SERVER: ServerInfo = {
         : window.location.protocol === 'https:',
 }
 
-/** The Summit 42 server, read from VITE_SUMMIT42_API_URL at build time; empty for this page's own origin. */
-export const SUMMIT42_API_URL: string = import.meta.env.VITE_SUMMIT42_API_URL || ''
-
 /** The absolute URL of a REST route on the gateway, e.g. apiUrl('/api/auth/me'). */
 export function apiUrl(path: string): string {
     const { host, port, useSSL } = KINOTIC_SERVER

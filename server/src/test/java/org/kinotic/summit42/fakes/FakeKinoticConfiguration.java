@@ -9,7 +9,6 @@ import io.vertx.ext.web.client.WebClient;
 import org.apache.hc.core5.http.HttpHost;
 import org.kinotic.core.api.event.ZonePartitioningService;
 import org.kinotic.core.api.security.SecurityContext;
-import org.kinotic.domain.api.services.security.SignUpService;
 import org.kinotic.domain.api.utils.DomainUtil;
 import org.kinotic.management.api.services.github.ProjectRepoCredentialService;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -83,11 +82,6 @@ public class FakeKinoticConfiguration {
     @Bean
     public FakeMemberInvitationService fakeMemberInvitationService(SecurityContext securityContext) {
         return fake(FakeMemberInvitationService.class, securityContext);
-    }
-
-    @Bean
-    public SignUpService signUpService() {
-        return mock(SignUpService.class);
     }
 
     @Bean

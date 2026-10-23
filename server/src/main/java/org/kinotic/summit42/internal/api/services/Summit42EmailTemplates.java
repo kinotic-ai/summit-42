@@ -11,7 +11,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Summit 42's invitation and sign-up verification emails, which Kinotic sends in place of its own, with links to
+ * Summit 42's invitation emails, which Kinotic sends in place of its own, with links to
  * Summit 42's UI at {@link Summit42Properties#getUiBaseUrl()}.
  */
 @Getter
@@ -25,14 +25,8 @@ public class Summit42EmailTemplates {
      */
     private final EmailTemplate invitation;
 
-    /**
-     * The verification of an email sign-up.
-     */
-    private final EmailTemplate verification;
-
     public Summit42EmailTemplates(Summit42Properties properties) {
         this.invitation = load("invitation", properties.getUiBaseUrl());
-        this.verification = load("verification", properties.getUiBaseUrl());
     }
 
     private static EmailTemplate load(String name, String uiBaseUrl) {

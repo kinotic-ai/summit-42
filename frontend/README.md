@@ -1,6 +1,6 @@
 # Summit 42 frontend
 
-The chat-only UI of Summit 42: people sign up, create and name their apps, describe each one in a chat, and the
+The chat-only UI of Summit 42: people sign up with GitHub, create and name their apps, describe each one in a chat, and the
 Summit 42 server builds and deploys it as a Kinotic app. A Vue 3 + Vite + TypeScript SPA that signs in to the Kinotic management gateway and
 talks to `AppBuilderService`, in Kinotic's `management-api` zone, over Kinotic's STOMP connection (`@kinotic-ai/core`).
 The workspace and app pages call Kinotic's own services over the same connection, through `@kinotic-ai/management-api`
@@ -16,9 +16,8 @@ bun run dev          # http://localhost:5175
 ```
 
 The management server must admit `http://localhost:5175` in its CORS pattern, as the
-root [README](../README.md#kinotic-configuration) shows. The dev server forwards `POST /api/signup` to the Summit 42
-server on `localhost:8080`. With the email service disabled locally, the sign-up
-verification link is printed in the management server's log.
+root [README](../README.md#kinotic-configuration) shows. Signing up needs the platform's GitHub sign-in
+registration, since every workspace builds its apps in its own GitHub account.
 
 ## Configuration
 
@@ -29,11 +28,9 @@ Build-time Vite variables (copy `.env.example` to `.env.local` to override):
 | `VITE_KINOTIC_HOST` | `localhost` | Host of the Kinotic management gateway |
 | `VITE_KINOTIC_PORT` | `58503` | Its port |
 | `VITE_KINOTIC_USE_SSL` | `false` | `true` for `https`/`wss` |
-| `VITE_SUMMIT42_API_URL` | this page's origin, which `bun run dev` forwards to `localhost:8080` | Base URL of the Summit 42 server, which the email sign-up posts to |
 
 REST calls go to `http(s)://host:port` and the STOMP connection to the same host and port. For the Kinotic
-development server use `dev-api.kinotic.ai`, `443`, `true`, and `https://dev-summit42-api.kinotic.ai` for the
-Summit 42 server.
+development server use `dev-api.kinotic.ai`, `443`, `true`.
 
 ## Build
 
@@ -41,7 +38,7 @@ Summit 42 server.
 bun run build        # vue-tsc type-check, then vite build into dist/
 ```
 
-`dist/` is a history-mode SPA: whatever serves it must answer unknown paths (`/login`, `/signup/verify`, `/register`,
+`dist/` is a history-mode SPA: whatever serves it must answer unknown paths (`/login`, `/signup`, `/register`,
 `/invite/accept`, `/github/callback`) with `index.html`.
 
 ## Routes
@@ -59,7 +56,6 @@ bun run build        # vue-tsc type-check, then vite build into dist/
 | `/apps/<application id>/settings` | Rename the app, its id and repository, and deleting it |
 | `/github/callback` | Where GitHub's install returns, through Kinotic, with `installation_id`, `state` and `code`: finishes linking GitHub and opens the workspace |
 | `/login` | Sign in: social buttons, or email and password for the workspace this browser last used |
-| `/signup` | Create an account with a social provider or email |
-| `/signup/verify?token=` | The emailed link's page: name the workspace and set a password |
+| `/signup` | Create an account with GitHub |
 | `/register?token=` | Where a social sign-up returns: name the workspace |
 | `/invite/accept?token=` | The emailed invitation's page: accept with a password or a sign-in provider; an invitation into an app then opens the app's own sign-in page |

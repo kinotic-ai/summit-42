@@ -1,4 +1,4 @@
-import { apiUrl, SUMMIT42_API_URL } from '@/api/server'
+import { apiUrl } from '@/api/server'
 
 /**
  * The Kinotic management gateway's browser auth routes. Every call sends credentials so the session cookie the
@@ -13,7 +13,6 @@ export interface LoginProvider {
 }
 
 const WORKSPACE_KEY = 'summit42.organizationId'
-const SIGNUP_NAME_KEY = 'summit42.signupDisplayName'
 
 function readStored(key: string): string | null {
     try {
@@ -44,15 +43,6 @@ export function rememberWorkspace(organizationId: string | null): void {
     writeStored(WORKSPACE_KEY, organizationId)
 }
 
-/** The display name given at email sign-up, kept to prefill the workspace name once the email is verified. */
-export function rememberedSignupName(): string | null {
-    return readStored(SIGNUP_NAME_KEY)
-}
-
-export function rememberSignupName(displayName: string | null): void {
-    writeStored(SIGNUP_NAME_KEY, displayName)
-}
-
 /** The gateway's {"error": "..."} message from a failed response, or the fallback. */
 async function readError(res: Response, fallback: string): Promise<string> {
     let ret = fallback
@@ -68,11 +58,7 @@ async function readError(res: Response, fallback: string): Promise<string> {
 }
 
 async function postJson(path: string, body: unknown, fallbackError: string): Promise<Response> {
-    return postJsonTo(apiUrl(path), body, fallbackError)
-}
-
-async function postJsonTo(url: string, body: unknown, fallbackError: string): Promise<Response> {
-    const res = await fetch(url, {
+    const res = await fetch(apiUrl(path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -175,16 +161,6 @@ export function workspaceLoginUrl(organizationId: string, configurationId: strin
 /** Form action that starts a social sign-up; it returns to this UI's /register?token=... */
 export function socialSignupUrl(provider: string): string {
     return apiUrl('/api/auth/org/signup/social/start/' + encodeURIComponent(provider))
-}
-
-/** Starts an email sign-up through the Summit 42 server, which emails a link to this UI's /signup/verify?token=... */
-export async function signUp(email: string, displayName: string): Promise<void> {
-    await postJsonTo(SUMMIT42_API_URL + '/api/signup', { email, displayName }, 'Sign-up failed')
-}
-
-/** Finishes an email sign-up, creating the workspace and the account's password, and establishes the session. */
-export async function completeSignUp(token: string, orgName: string, password: string): Promise<void> {
-    await postJson('/api/auth/org/signup/complete', { token, orgName, orgDescription: null, password }, 'Could not create your workspace')
 }
 
 /** Finishes a social sign-up, creating the workspace, and establishes the session. */

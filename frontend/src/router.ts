@@ -36,7 +36,6 @@ const router = createRouter({
         { path: GITHUB_CALLBACK_PATH, component: () => import('@/pages/GitHubCallbackPage.vue') },
         { path: '/login', component: () => import('@/pages/LoginPage.vue'), meta: { public: true } },
         { path: '/signup', component: () => import('@/pages/SignupPage.vue'), meta: { public: true } },
-        { path: '/signup/verify', component: () => import('@/pages/VerifyEmailPage.vue'), meta: { public: true } },
         { path: '/register', component: () => import('@/pages/RegisterPage.vue'), meta: { public: true } },
         { path: '/invite/accept', component: () => import('@/pages/InviteAcceptPage.vue'), meta: { public: true } },
         { path: '/:pathMatch(.*)*', redirect: '/' },

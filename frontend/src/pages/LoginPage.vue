@@ -1,5 +1,9 @@
 <template>
   <AuthShell title="Welcome back" :subtitle="workspace ? `Sign in to the ${workspace} workspace.` : 'Sign in to keep building.'">
+    <template #hero>
+      <HeroPitch />
+    </template>
+
     <div v-if="error" class="alert alert--error" role="alert">{{ error }}</div>
 
     <!-- the workspaces a social sign-in found the account a member of; the person picks one -->
@@ -63,7 +67,7 @@
                  autocorrect="off"
                  spellcheck="false"
                  placeholder="e.g. janes-apps" />
-          <span class="hint">Signed up with email and password? Enter your workspace name or id.</span>
+          <span class="hint">Joined a workspace with an email and password? Enter its name or id.</span>
         </div>
         <button type="submit" class="btn btn--secondary btn--block">Continue with email</button>
       </form>
@@ -79,6 +83,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/components/AuthShell.vue'
+import HeroPitch from '@/components/HeroPitch.vue'
 import ProviderButton from '@/components/ProviderButton.vue'
 import {
   authErrorMessage,
