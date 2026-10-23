@@ -26,7 +26,9 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -35,6 +37,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * The tools Claude builds the turn's app with. Each works on the project of the {@link BuilderTurn} and acts for its
@@ -101,10 +105,12 @@ public class AppBuilderTools {
                             ToolContext toolContext) {
         return act(toolContext, BuildStepType.READING, "Reading " + describePaths(paths), turn -> {
             ProjectRepoToken token = repoToken(turn);
+            List<Future<String>> contents = paths.stream().map(path -> gitHubRepoClient.readFile(token, path)).toList();
+            await(Future.all(contents));
             StringBuilder ret = new StringBuilder();
-            for (String path : paths) {
-                String content = await(gitHubRepoClient.readFile(token, path));
-                ret.append("=== ").append(path).append(" ===\n")
+            for (int i = 0; i < paths.size(); i++) {
+                String content = contents.get(i).result();
+                ret.append("=== ").append(paths.get(i)).append(" ===\n")
                    .append(content != null ? content : "(no such file)")
                    .append("\n");
             }
@@ -113,16 +119,25 @@ public class AppBuilderTools {
     }
 
     @Tool(description = """
-            Writes files to the app's repository as one commit on its default branch, which deploys the app. Each file \
-            carries its full new content; a file without content is deleted. Write every change of a step in one call, \
-            then call waitForDeployment.""")
+            Commits changes to the app's repository as one commit on its default branch, which deploys the app. `edits` \
+            change part of an existing file, each replacing text that occurs exactly once in it; use them for every \
+            change to an existing file that keeps most of it, as they are much faster than writing the file whole. \
+            `files` write new files and rewrites with their full content, and delete a file given without content. \
+            Put every change of a step in one call, then call waitForDeployment. Nothing is committed when an edit's \
+            text is not found exactly once.""")
     public String writeFiles(@ToolParam(description = "The commit message") String message,
-                             @ToolParam(description = "The files to write or delete") List<RepoFile> files,
+                             @ToolParam(required = false, description = "The files to write whole or delete") List<RepoFile> files,
+                             @ToolParam(required = false, description = "The changes to parts of existing files, applied in order") List<RepoEdit> edits,
                              ToolContext toolContext) {
-        Validate.notEmpty(files, "files are required");
-        return act(toolContext, BuildStepType.COMMITTING, "Committing " + files.size() + (files.size() == 1 ? " file: " : " files: ") + message, turn -> {
+        List<RepoFile> written = Objects.requireNonNullElse(files, List.of());
+        List<RepoEdit> changes = Objects.requireNonNullElse(edits, List.of());
+        Validate.isTrue(!written.isEmpty() || !changes.isEmpty(), "files or edits are required");
+        long count = Stream.concat(written.stream().map(RepoFile::path), changes.stream().map(RepoEdit::path)).distinct().count();
+        return act(toolContext, BuildStepType.COMMITTING, "Committing " + count + (count == 1 ? " file: " : " files: ") + message, turn -> {
             ProjectRepoToken token = repoToken(turn);
-            String commitSha = await(gitHubRepoClient.commit(token, message, files));
+            List<RepoFile> commit = new ArrayList<>(written);
+            commit.addAll(edited(token, written, changes));
+            String commitSha = await(gitHubRepoClient.commit(token, message, commit));
             turn.getSession().setLastCommitSha(commitSha);
             return "Committed " + commitSha + "; its deployment has started.";
         });
@@ -200,6 +215,34 @@ public class AppBuilderTools {
     }
 
     // the first few paths, so a step reading many files stays one line
+    // each file the edits change, with its edits applied in order to its content on the default branch
+    private List<RepoFile> edited(ProjectRepoToken token, List<RepoFile> written, List<RepoEdit> edits) {
+        Map<String, List<RepoEdit>> byPath = edits.stream().collect(Collectors.groupingBy(RepoEdit::path, LinkedHashMap::new, Collectors.toList()));
+        written.forEach(file -> Validate.isTrue(!byPath.containsKey(file.path()),
+                                                "%s is both written whole and edited; do one or the other", file.path()));
+        List<Future<RepoFile>> ret = byPath.entrySet().stream()
+                                           .map(entry -> gitHubRepoClient.readFile(token, entry.getKey())
+                                                                         .map(content -> new RepoFile(entry.getKey(),
+                                                                                                      applyEdits(entry.getKey(), content, entry.getValue()))))
+                                           .toList();
+        await(Future.all(ret));
+        return ret.stream().map(Future::result).toList();
+    }
+
+    private static String applyEdits(String path, String content, List<RepoEdit> edits) {
+        Validate.isTrue(content != null, "%s does not exist; write it whole in files", path);
+        String ret = content;
+        for (RepoEdit edit : edits) {
+            Validate.notEmpty(edit.oldText(), "An edit of %s has no text to replace", path);
+            int at = ret.indexOf(edit.oldText());
+            Validate.isTrue(at >= 0, "The text to replace in %s was not found; read the file again", path);
+            Validate.isTrue(ret.indexOf(edit.oldText(), at + 1) < 0,
+                            "The text to replace in %s occurs more than once; include more of the text around it", path);
+            ret = ret.substring(0, at) + Objects.requireNonNullElse(edit.newText(), "") + ret.substring(at + edit.oldText().length());
+        }
+        return ret;
+    }
+
     private static String describePaths(List<String> paths) {
         String ret;
         if (paths == null || paths.isEmpty()) {

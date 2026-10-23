@@ -6,6 +6,8 @@ import okhttp3.Interceptor;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.summit42.api.config.Summit42Properties;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
+import org.springframework.ai.anthropic.AnthropicCacheOptions;
+import org.springframework.ai.anthropic.AnthropicCacheStrategy;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
@@ -38,6 +40,12 @@ public class ChatClientFactory {
     // a response streams its tokens as they are generated, so one that sends nothing for this long has lost its
     // connection or its server, and its call fails rather than holding the turn open
     private static final Duration IDLE_TIMEOUT = Duration.ofMinutes(5);
+    // each step of a turn sends the whole prompt again, so Anthropic caches it up to the last message and tool result,
+    // and the next step reads that prefix from the cache instead of processing it again
+    private static final AnthropicCacheOptions PROMPT_CACHING = AnthropicCacheOptions.builder()
+                                                                                    .strategy(AnthropicCacheStrategy.CONVERSATION_HISTORY)
+                                                                                    .cacheToolResults(true)
+                                                                                    .build();
     // set on each call's chain, since the providers' clients apply NO_TIMEOUT as the read timeout of every call
     private static final Interceptor IDLE_TIMEOUT_INTERCEPTOR =
             chain -> chain.withReadTimeout((int) IDLE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).proceed(chain.request());
@@ -103,6 +111,7 @@ public class ChatClientFactory {
                                      .maxTokens(maxTokens)
                                      .temperature(configuration.getTemperature())
                                      .timeout(NO_TIMEOUT)
+                                     .cacheOptions(PROMPT_CACHING)
                                      .build())
                     .build();
             case OPENAI -> OpenAiChatModel.builder()
