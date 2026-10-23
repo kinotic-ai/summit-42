@@ -13,7 +13,6 @@ import io.vertx.ext.web.healthchecks.HealthCheckHandler;
 import io.vertx.ext.healthchecks.HealthChecks;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
-import io.vertx.ext.web.handler.StaticHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.kinotic.domain.api.services.security.SignUpService;
@@ -25,22 +24,20 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Serves the Summit 42 UI from the jar's {@code webroot}, answering every path that is not a file with
- * {@code index.html} so the UI's own router handles it. {@code POST /api/signup} with {@code {email, displayName}}
- * starts an email sign-up, emailing a link to the UI's {@code /signup/verify} page, and answers 200, or 400 with
- * {@code {error}}; it admits cross-origin calls from {@code summit42.uiBaseUrl}, so a UI served elsewhere can call it.
- * {@code GET /health} answers 200 while every registered health check passes, and 503 otherwise. The port serves TLS
- * when {@code summit42.ssl.enabled} is set.
+ * Summit 42's HTTP API on port 8080. {@code POST /api/signup} with {@code {email, displayName}} starts an email
+ * sign-up, emailing a link to the UI's {@code /signup/verify} page, and answers 200, or 400 with {@code {error}}; it
+ * admits cross-origin calls from {@code summit42.uiBaseUrl}, where the UI is served. {@code GET /health} answers 200
+ * while every registered health check passes, and 503 otherwise. The port serves TLS when
+ * {@code summit42.ssl.enabled} is set.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class UiWebServer {
+public class ApiServer {
 
     public static final int PORT = 8080;
 
     private static final String SIGN_UP_PATH = "/api/signup";
-    private static final String WEBROOT = "webroot";
     private static final long SIGN_UP_BODY_LIMIT = 16 * 1024;
 
     private final Vertx vertx;
@@ -62,10 +59,6 @@ public class UiWebServer {
         router.post(SIGN_UP_PATH)
               .handler(BodyHandler.create().setBodyLimit(SIGN_UP_BODY_LIMIT))
               .handler(this::handleSignUp);
-        router.route().handler(StaticHandler.create(WEBROOT).setIndexPage("index.html"));
-        router.get().handler(ctx -> ctx.response()
-                                       .putHeader("Content-Type", "text/html; charset=utf-8")
-                                       .sendFile(WEBROOT + "/index.html"));
         HttpServerOptions options = new HttpServerOptions();
         SslProperties ssl = properties.getSsl();
         if (ssl.isEnabled()) {
@@ -74,8 +67,8 @@ public class UiWebServer {
         }
         HttpServer server = vertx.createHttpServer(options).requestHandler(router);
         server.listen(PORT)
-              .onSuccess(s -> log.info("Serving the Summit 42 UI on port {}", s.actualPort()))
-              .onFailure(e -> log.error("The Summit 42 UI server could not listen on port {}", PORT, e));
+              .onSuccess(s -> log.info("Serving the Summit 42 API on port {}", s.actualPort()))
+              .onFailure(e -> log.error("The Summit 42 API could not listen on port {}", PORT, e));
     }
 
     private void handleSignUp(RoutingContext ctx) {

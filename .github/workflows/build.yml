@@ -66,8 +66,7 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew check
 
-  # Builds the image, which serves the UI from the jar, and stages it without waiting on the tests in
-  # the build job.
+  # Builds the server's image and stages it without waiting on the tests in the build job.
   server_image:
     name: Server Image
     runs-on: ubuntu-latest
@@ -86,23 +85,6 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-
-      # The UI reads the management gateway's address at build time, so the image targets the
-      # gateway these repository variables name, or a local one when they are unset.
-      - name: Build UI
-        working-directory: frontend
-        env:
-          VITE_KINOTIC_HOST: ${{ vars.VITE_KINOTIC_HOST }}
-          VITE_KINOTIC_PORT: ${{ vars.VITE_KINOTIC_PORT }}
-          VITE_KINOTIC_USE_SSL: ${{ vars.VITE_KINOTIC_USE_SSL }}
-        run: |
-          bun install --frozen-lockfile
-          bun run build
 
       - name: Build server image
         run: ./gradlew :server:bootBuildImage

@@ -93,13 +93,6 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs << '-parameters'
 }
 
-// The UI is served from the jar's webroot; build it first with `bun run build` in frontend/
-tasks.named('processResources') {
-    from(rootProject.file('frontend/dist')) {
-        into 'webroot'
-    }
-}
-
 // Ignite reads JDK internals, which Kinotic's servers open the same way
 def addOpens = ['--add-opens=java.base/java.nio=ALL-UNNAMED',
                 '--add-opens=java.base/java.util=ALL-UNNAMED',

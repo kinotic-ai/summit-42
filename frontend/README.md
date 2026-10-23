@@ -29,11 +29,11 @@ Build-time Vite variables (copy `.env.example` to `.env.local` to override):
 | `VITE_KINOTIC_HOST` | `localhost` | Host of the Kinotic management gateway |
 | `VITE_KINOTIC_PORT` | `58503` | Its port |
 | `VITE_KINOTIC_USE_SSL` | `false` | `true` for `https`/`wss` |
-| `VITE_SUMMIT42_API_URL` | this page's origin | Base URL of the Summit 42 server, which the email sign-up posts to |
+| `VITE_SUMMIT42_API_URL` | this page's origin, which `bun run dev` forwards to `localhost:8080` | Base URL of the Summit 42 server, which the email sign-up posts to |
 
 REST calls go to `http(s)://host:port` and the STOMP connection to the same host and port. For the Kinotic
 development server use `dev-api.kinotic.ai`, `443`, `true`, and `https://dev-summit42-api.kinotic.ai` for the
-Summit 42 server, since the UI is served apart from it there.
+Summit 42 server.
 
 ## Build
 

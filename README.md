@@ -8,8 +8,8 @@ deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, 
 
 | Path | What it is |
 |---|---|
-| `server/` | A Spring Boot member of the Kinotic cluster that runs Kinotic's `kinotic-domain` and `kinotic-management-api` modules in process. It hosts `AppBuilderService` and `InvitationService` in Kinotic's `management-api` zone, and serves the UI, its email sign-up route, `POST /api/signup`, and `/health` on port 8080. |
-| `frontend/` | The Vue UI. It signs in to the Kinotic management gateway and chats with `AppBuilderService` over that gateway's STOMP connection. See [frontend/README.md](frontend/README.md). |
+| `server/` | A Spring Boot member of the Kinotic cluster that runs Kinotic's `kinotic-domain` and `kinotic-management-api` modules in process. It hosts `AppBuilderService` and `InvitationService` in Kinotic's `management-api` zone, and serves the UI's email sign-up route, `POST /api/signup`, and `/health` on port 8080. |
+| `frontend/` | The Vue UI, deployed as static files on its own. It signs in to the Kinotic management gateway and chats with `AppBuilderService` over that gateway's STOMP connection. See [frontend/README.md](frontend/README.md). |
 
 ## How it works
 
@@ -58,11 +58,7 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
 
 1. Start the Kinotic stack from `kinotic/deployment/docker-compose`, with a GitHub App of your own as Kinotic's contributing guide describes, and the management server configured as [Kinotic configuration](#kinotic-configuration) shows.
 2. Add an LLM configuration named `summit-42` with an API key on the system console.
-3. Build the UI:
-   ```bash
-   cd frontend && bun install && bun run build
-   ```
-4. Start the server with the `development` profile, which points it at the stack's Elasticsearch on `localhost:9200`,
+3. Start the server with the `development` profile, which points it at the stack's Elasticsearch on `localhost:9200`,
    logs emailed links instead of sending them, reads your GitHub App from the file Kinotic's dev tools write for the
    management server, and opens emailed links on the UI's dev server, `http://localhost:5175`. Set the Ignite
    discovery so it joins the stack's cluster:
@@ -72,7 +68,8 @@ Kinotic knows nothing about Summit 42, so the management server it signs users i
    KINOTIC_IGNITE_LOCALADDRESSES=<the Kinotic servers' discovery addresses> \
    ./gradlew :server:bootRun
    ```
-5. For UI work, run `bun run dev` in `frontend/` and open `http://localhost:5175`.
+4. Run `bun run dev` in `frontend/` and open `http://localhost:5175`; the dev server forwards the email sign-up to
+   the server on `localhost:8080`.
 
 `./gradlew :server:test` boots the server as the only member of a cluster of its own and calls `AppBuilderService` over Kinotic RPC, so it needs no Kinotic stack. It needs Docker: the tests start Elasticsearch in a container for the saved conversations, and are skipped without Docker. Kinotic's in-process services are replaced by fakes, and the LLM configurations by a fake published on the server's own node, which points at a local fake of Anthropic's API.
 
@@ -80,24 +77,14 @@ The server builds against `org.kinotic:*:5.0.0-SNAPSHOT`, published to the Centr
 
 ## Deploy
 
-`./gradlew :server:bootBuildImage` builds `kinoticai/summit-42:<version>`. Build the UI first, because the jar serves `frontend/dist`.
+The server and the UI deploy separately.
 
-CI (`.github/workflows/build.yml`) builds and tests every push and pull request to `develop` or `main`, and a nightly run rebuilds against the latest Kinotic snapshot. It stages the image on ghcr.io and, once every job passes on `develop` or `main`, pushes it to Docker Hub as `kinoticai/summit-42:<version>`. The repository needs:
-
-| Setting | Kind | Value |
-|---|---|---|
-| `DOCKER_HUB_USERNAME`, `DOCKER_HUB_PASSWORD` | secrets | a Docker Hub account that can push `kinoticai/summit-42` |
-| `VITE_KINOTIC_HOST`, `VITE_KINOTIC_PORT`, `VITE_KINOTIC_USE_SSL` | variables | the management gateway the image's UI connects to; unset, the UI connects to `localhost:58503` |
-
-Run the container beside the Kinotic servers, whose management server is configured as
-[Kinotic configuration](#kinotic-configuration) shows, with:
+**The server.** `./gradlew :server:bootBuildImage` builds `kinoticai/summit-42:<version>`. CI (`.github/workflows/build.yml`) builds and tests every push and pull request to `develop` or `main`, and a nightly run rebuilds against the latest Kinotic snapshot. It stages the image on ghcr.io and, once every job passes on `develop` or `main`, pushes it to Docker Hub as `kinoticai/summit-42:<version>`, with the Docker Hub account in the repository's `DOCKER_HUB_USERNAME` and `DOCKER_HUB_PASSWORD` secrets. Run the container beside the Kinotic servers, whose management server is configured as [Kinotic configuration](#kinotic-configuration) shows, with:
 
 - `KINOTIC_IGNITE_*` set so it joins their cluster;
 - the management server's Elasticsearch, secret storage, email, platform secrets and GitHub App settings, and `SUMMIT42_UIBASEURL`, as [Kinotic configuration](#kinotic-configuration) lists;
-- port 8080 published where the UI reaches it.
+- port 8080 reachable from the UI's browsers, with `summit42.ssl` on unless something in front of it terminates TLS.
 
-The UI can instead be served apart from the server, as static files from `frontend/dist`, with
-`VITE_SUMMIT42_API_URL` naming the server for the email sign-up. The Kinotic development server does this: its sites
-Worker serves the UI at `https://dev-summit42.kinotic.ai`, and the server is `https://dev-summit42-api.kinotic.ai`
-with `summit42.ssl` on, behind the edge that passes each TLS connection through unopened. Kinotic's
-`deployment/terraform/proxmox` root runs both when the `dev-server` root's `summit42_enabled` is set.
+**The UI.** `bun run build` in `frontend/` writes static files to `dist/`, built with the `VITE_*` variables naming the management gateway and the server (see [frontend/README.md](frontend/README.md#configuration)). Serve them from any static host that answers unknown paths with `index.html`, at the origin `summit42.uiBaseUrl` names.
+
+The Kinotic development server runs both: its sites Worker serves the UI at `https://dev-summit42.kinotic.ai`, and the server is `https://dev-summit42-api.kinotic.ai` behind the edge that passes each TLS connection through unopened. Kinotic's `deployment/terraform/proxmox` root runs them when the `dev-server` root's `summit42_enabled` is set, and its `redeploy.sh` builds and uploads the UI from this repository's `main`.

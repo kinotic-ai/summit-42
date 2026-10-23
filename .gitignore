@@ -9,5 +9,3 @@ node_modules/
 dist/
 .env
 .env.local
-# filled from frontend/dist by the server's processResources
-server/src/main/resources/webroot/
