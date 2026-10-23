@@ -18,5 +18,10 @@ public enum BuildStepType {
     /**
      * Waiting on the deployment of the last commit, through each of its phases.
      */
-    DEPLOYING
+    DEPLOYING,
+
+    /**
+     * Checking how the deployed app behaves, by reading its logs or calling its services.
+     */
+    CHECKING
 }

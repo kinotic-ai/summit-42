@@ -28,8 +28,8 @@ import static org.mockito.Mockito.withSettings;
 /**
  * Stands in for the Kinotic modules Summit 42 runs in process, which the test profile leaves out: fakes of the Kinotic
  * services it calls, Elasticsearch in a container, a fake of the system server's LLM configurations published on
- * Summit 42's own node, a fake of Anthropic's API for those configurations to point at, and a fake of GitHub serving
- * Kinotic's agent plugin.
+ * Summit 42's own node, a fake of Anthropic's API for those configurations to point at, a fake of GitHub serving
+ * Kinotic's agent plugin, and a service for tests to publish as an app's microservice would.
  */
 @TestConfiguration
 public class FakeKinoticConfiguration {
@@ -40,13 +40,13 @@ public class FakeKinoticConfiguration {
                     .withEnv("xpack.security.enabled", "false");
 
     /**
-     * Hosts the system-api zone too, beside the management-api zone Summit 42 hosts, for the fake of the system-api
-     * service.
+     * Hosts the system-api zone and the applications' zones too, beside the management-api zone Summit 42 hosts, for
+     * the fake of the system-api service and the services a test publishes as an app's microservice would.
      */
     @Bean
     @Primary
     public ZonePartitioningService fakeKinoticZonePartitioningService() {
-        Set<String> zones = Set.of(DomainUtil.MANAGEMENT_API_ZONE, DomainUtil.SYSTEM_API_ZONE);
+        Set<String> zones = Set.of(DomainUtil.MANAGEMENT_API_ZONE, DomainUtil.SYSTEM_API_ZONE, DomainUtil.APP_ZONE_PREFIX);
         return ZonePartitioningService.of("summit-42", zones, zones);
     }
 
@@ -72,6 +72,21 @@ public class FakeKinoticConfiguration {
     @Bean
     public FakeUiDeploymentService fakeUiDeploymentService(SecurityContext securityContext) {
         return fake(FakeUiDeploymentService.class, securityContext);
+    }
+
+    @Bean
+    public FakeMicroserviceDeploymentService fakeMicroserviceDeploymentService(SecurityContext securityContext) {
+        return fake(FakeMicroserviceDeploymentService.class, securityContext);
+    }
+
+    @Bean
+    public FakeLogService fakeLogService(SecurityContext securityContext) {
+        return fake(FakeLogService.class, securityContext);
+    }
+
+    @Bean
+    public FakeRecipeService fakeRecipeService(SecurityContext securityContext) {
+        return new FakeRecipeService(securityContext);
     }
 
     @Bean

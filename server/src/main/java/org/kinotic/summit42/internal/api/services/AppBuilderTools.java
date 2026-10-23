@@ -2,6 +2,11 @@ package org.kinotic.summit42.internal.api.services;
 
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.json.DecodeException;
+import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.WebClient;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.Validate;
@@ -10,11 +15,15 @@ import org.kinotic.domain.api.model.ReconcileState;
 import org.kinotic.management.api.model.ProjectRepoToken;
 import org.kinotic.management.api.model.deployment.DeploymentState;
 import org.kinotic.management.api.model.deployment.DeploymentStatusType;
+import org.kinotic.management.api.model.deployment.MicroserviceDeployment;
 import org.kinotic.management.api.model.deployment.ProjectDeployment;
 import org.kinotic.management.api.model.deployment.UiDeployment;
+import org.kinotic.management.api.model.telemetry.LogQuery;
 import org.kinotic.management.api.services.ProjectService;
+import org.kinotic.management.api.services.deployment.MicroserviceDeploymentService;
 import org.kinotic.management.api.services.deployment.UiDeploymentService;
 import org.kinotic.management.api.services.github.ProjectRepoCredentialService;
+import org.kinotic.management.api.services.telemetry.LogService;
 import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.BuildStepType;
 import org.kinotic.summit42.internal.api.repositories.BuilderSession;
@@ -25,7 +34,10 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +73,13 @@ public class AppBuilderTools {
     private static final Duration TOKEN_RENEWAL_MARGIN = Duration.ofMinutes(5);
     // the paths a readFiles step names before summing up the rest
     private static final int MAX_PATHS_DESCRIBED = 3;
+    private static final Duration LOG_WINDOW = Duration.ofHours(1);
+    // the newest lines readAppLogs answers for each microservice, and the characters it keeps of each line
+    private static final int MAX_LOG_LINES = 200;
+    private static final int MAX_LOG_LINE_LENGTH = 1_000;
+    // the characters of a service's result callAppService answers with
+    private static final int MAX_RESULT_LENGTH = 20_000;
+    private static final DateTimeFormatter LOG_TIME = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneOffset.UTC);
     private static final String DOCS_HOST = "raw.githubusercontent.com";
     private static final String DOCS_PATH = "/kinotic-ai/kinotic/develop/website/content/01.apps/";
     private static final List<String> DOC_PAGES = List.of(
@@ -91,6 +110,9 @@ public class AppBuilderTools {
     private final SecurityContext securityContext;
     private final ProjectService projectService;
     private final UiDeploymentService uiDeploymentService;
+    private final MicroserviceDeploymentService microserviceDeploymentService;
+    private final LogService logService;
+    private final AppServiceClient appServiceClient;
     private final ProjectRepoCredentialService repoCredentialService;
     private final GitHubRepoClient gitHubRepoClient;
     private final WebClient webClient;
@@ -165,6 +187,69 @@ public class AppBuilderTools {
         });
     }
 
+    @Tool(description = """
+            Reads the logs of the app's microservices from the last hour, oldest first: what each printed and the errors \
+            it raised, and why a microservice is not running when it is not. Read them after a deployment that changes a \
+            microservice, and whenever something the app does fails or finds nothing, before changing its code.""")
+    public String readAppLogs(ToolContext toolContext) {
+        return act(toolContext, BuildStepType.CHECKING, "Reading the app's logs", turn -> {
+            List<MicroserviceDeployment> microservices =
+                    callAs(turn, () -> microserviceDeploymentService.findAllForProject(turn.getProjectId()).toCompletionStage());
+            String ret;
+            if (microservices.isEmpty()) {
+                ret = "The app has no deployed microservice.";
+            } else {
+                long end = System.currentTimeMillis();
+                StringBuilder logs = new StringBuilder();
+                for (MicroserviceDeployment microservice : microservices) {
+                    logs.append("=== ").append(microservice.getName()).append(" ===\n");
+                    if (microservice.getFailureMessage() != null) {
+                        logs.append("Not running as it should: ").append(microservice.getFailureMessage()).append("\n");
+                    }
+                    if (microservice.getWorkloadId() == null) {
+                        logs.append("(not started yet)\n");
+                    } else {
+                        LogQuery query = new LogQuery().setOrganizationId(microservice.getOrganizationId())
+                                                       .setWorkloadId(microservice.getWorkloadId())
+                                                       .setStart(end - LOG_WINDOW.toMillis())
+                                                       .setEnd(end + 1)
+                                                       .setLimit(MAX_LOG_LINES);
+                        logs.append(logLines(callAs(turn, () -> logService.history(query).toCompletionStage())));
+                    }
+                }
+                ret = logs.toString();
+            }
+            return ret;
+        });
+    }
+
+    @Tool(description = """
+            Calls a function of a service the app's microservice publishes, as the signed-in user, and returns its \
+            result as JSON or the error it failed with. Call it after a deployment to check that a service works, with \
+            the arguments a UI of the app would send, and read the app's logs when it fails or returns nothing. The \
+            signed-in user is a member of the app's organization, not one of the app's own users.""")
+    public String callAppService(@ToolParam(description = "The service's namespace and name as the microservice publishes it, such as recipeapp.RecipeSearchService")
+                                 String service,
+                                 @ToolParam(description = "The function to call, such as searchRecipes") String function,
+                                 @ToolParam(description = "The function's arguments as a JSON array, in order, such as [\"enchiladas\"]")
+                                 String arguments,
+                                 ToolContext toolContext) {
+        Validate.isTrue(isJsonArray(arguments), "The arguments must be a JSON array, such as [\"enchiladas\"] or []");
+        return act(toolContext, BuildStepType.CHECKING, "Testing the app", turn -> {
+            String result = await(appServiceClient.call(turn.getParticipant(), turn.getSession().getApplicationKey(),
+                                                        service, function, arguments));
+            String ret;
+            if (result == null) {
+                ret = "The function returned nothing.";
+            } else if (result.length() > MAX_RESULT_LENGTH) {
+                ret = result.substring(0, MAX_RESULT_LENGTH) + "\n(the result is cut off here; it is " + result.length() + " characters long)";
+            } else {
+                ret = result;
+            }
+            return ret;
+        });
+    }
+
     @Tool(description = "Reads a page of Kinotic's documentation for building apps. Pages: " + "01.introduction.md, "
                         + "02.quick-start.md, 03.application-structure/*, 04.services/*, 05.persistence/*, "
                         + "06.security/01.authentication.md, 07.deployment/*, 09.reference/01.decorators.md, "
@@ -214,7 +299,43 @@ public class AppBuilderTools {
         return ret;
     }
 
-    // the first few paths, so a step reading many files stays one line
+    // the log lines of a Loki query_range response, oldest first, each with the time it was logged
+    private static String logLines(Buffer loki) {
+        List<JsonArray> entries = new ArrayList<>();
+        JsonArray streams = loki.toJsonObject().getJsonObject("data", new JsonObject()).getJsonArray("result", new JsonArray());
+        for (int i = 0; i < streams.size(); i++) {
+            JsonArray values = streams.getJsonObject(i).getJsonArray("values", new JsonArray());
+            for (int j = 0; j < values.size(); j++) {
+                entries.add(values.getJsonArray(j));
+            }
+        }
+        // each entry is [nanoseconds since the epoch, line], the nanoseconds as a string
+        entries.sort(Comparator.comparingLong(entry -> Long.parseLong(entry.getString(0))));
+        StringBuilder ret = new StringBuilder();
+        if (entries.isEmpty()) {
+            ret.append("(nothing logged in the last ").append(LOG_WINDOW.toMinutes()).append(" minutes)\n");
+        } else if (entries.size() >= MAX_LOG_LINES) {
+            ret.append("(the newest ").append(MAX_LOG_LINES).append(" lines)\n");
+        }
+        for (JsonArray entry : entries) {
+            String line = entry.getString(1);
+            ret.append(LOG_TIME.format(Instant.EPOCH.plusNanos(Long.parseLong(entry.getString(0))))).append(' ')
+               .append(line.length() > MAX_LOG_LINE_LENGTH ? line.substring(0, MAX_LOG_LINE_LENGTH) + "…" : line)
+               .append("\n");
+        }
+        return ret.toString();
+    }
+
+    private static boolean isJsonArray(String json) {
+        boolean ret;
+        try {
+            ret = json != null && Json.decodeValue(json) instanceof JsonArray;
+        } catch (DecodeException e) {
+            ret = false;
+        }
+        return ret;
+    }
+
     // each file the edits change, with its edits applied in order to its content on the default branch
     private List<RepoFile> edited(ProjectRepoToken token, List<RepoFile> written, List<RepoEdit> edits) {
         Map<String, List<RepoEdit>> byPath = edits.stream().collect(Collectors.groupingBy(RepoEdit::path, LinkedHashMap::new, Collectors.toList()));
@@ -243,6 +364,7 @@ public class AppBuilderTools {
         return ret;
     }
 
+    // the first few paths, so a step reading many files stays one line
     private static String describePaths(List<String> paths) {
         String ret;
         if (paths == null || paths.isEmpty()) {
