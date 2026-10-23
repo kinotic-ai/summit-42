@@ -98,6 +98,7 @@ import {
   type BuildStepType,
   type ChatRole,
   type Conversation,
+  takeUnsentDescription,
 } from '@/api/appBuilder'
 import { errorText, formatDuration, hostOf } from '@/api/format'
 
@@ -270,7 +271,8 @@ function stopClock() {
   }
 }
 
-// the conversation, then the turn still running from an earlier visit, whose steps so far replay before it goes on live
+// the conversation, then either the description of an app just created, sent as its first message, or the turn still
+// running from an earlier visit, whose steps so far replay before it goes on live
 async function load() {
   loading.value = true
   loadError.value = null
@@ -282,7 +284,13 @@ async function load() {
     loading.value = false
   }
   if (loadError.value === null) {
-    followRunningTurn()
+    const description = turns.value.length === 0 ? takeUnsentDescription(props.app.applicationId) : null
+    if (description) {
+      draft.value = description
+      send()
+    } else {
+      followRunningTurn()
+    }
   }
   await scrollToBottom()
   input.value?.focus()

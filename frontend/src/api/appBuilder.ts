@@ -128,11 +128,24 @@ export async function ensureAppsLoaded(): Promise<void> {
     }
 }
 
-/** Creates an app and adds it to {@link APPS}. */
+// the descriptions of apps created here whose chats have not sent them yet, keyed by application id
+const unsentDescriptions = new Map<string, string>()
+
+/** Creates an app and adds it to {@link APPS}; its description becomes the first message of its chat. */
 export async function createApp(name: string, description: string | null): Promise<BuilderApp> {
     const app = await APP_BUILDER.createApp(name, description)
+    if (description) {
+        unsentDescriptions.set(app.applicationId, description)
+    }
     APPS.list = [...APPS.list, app].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
     return APPS.list.find(listed => listed.applicationId === app.applicationId) ?? app
+}
+
+/** The description of an app created by {@link createApp} the first time it is asked for, then null. */
+export function takeUnsentDescription(applicationId: string): string | null {
+    const ret = unsentDescriptions.get(applicationId) ?? null
+    unsentDescriptions.delete(applicationId)
+    return ret
 }
 
 /** Records that the app was deployed and its UI serves at the url. */
