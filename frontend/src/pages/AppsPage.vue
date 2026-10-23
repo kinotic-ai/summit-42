@@ -37,7 +37,6 @@
             <h1 class="page-title">Apps</h1>
             <p class="page-subtitle">Everything you've built. Open one to keep changing it.</p>
           </div>
-          <button type="button" class="btn" @click="creating = true"><AppIcon name="plus" :stroke-width="2.25" /> New app</button>
         </div>
 
         <ul class="apps">
