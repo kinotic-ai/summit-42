@@ -52,7 +52,7 @@ bun run build        # vue-tsc type-check, then vite build into dist/
 | `/apps/<application id>/overview` | The app's link, status, data types, users, repository and recent deployments |
 | `/apps/<application id>/data` | The records of each of the app's entity types, searchable and paged |
 | `/apps/<application id>/users` | The people who sign in to the app: invite, disable, enable or remove |
-| `/apps/<application id>/deployments` | The deployment's status, live commit, published pages and history |
+| `/apps/<application id>/deployments` | The deployment's status, live commit, published pages, and a history of each version deployed, published or failed |
 | `/apps/<application id>/settings` | Rename the app, its id and repository, and deleting it |
 | `/github/callback` | Where GitHub's install returns, through Kinotic, with `installation_id`, `state` and `code`: finishes linking GitHub and opens the workspace |
 | `/login` | Sign in with GitHub, choosing the workspace when the account belongs to several |
