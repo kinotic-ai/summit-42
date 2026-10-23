@@ -21,6 +21,12 @@ public enum BuildEventType {
     APP_READY,
 
     /**
+     * A message the user sent to steer the running turn, which Claude reads from this point of the turn on; the
+     * event's text is the message.
+     */
+    USER_MESSAGE,
+
+    /**
      * The turn failed; the event's text says why.
      */
     ERROR

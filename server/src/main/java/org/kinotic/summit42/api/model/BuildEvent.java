@@ -17,7 +17,7 @@ public class BuildEvent {
     private BuildEventType type;
 
     /**
-     * The reply chunk, status line or error message, or null for {@link BuildEventType#APP_READY}.
+     * The reply chunk, status line, user's message or error message, or null for {@link BuildEventType#APP_READY}.
      */
     private String text;
 
@@ -46,6 +46,10 @@ public class BuildEvent {
 
     public static BuildEvent appReady(String url) {
         return new BuildEvent(BuildEventType.APP_READY, null, url, null, System.currentTimeMillis());
+    }
+
+    public static BuildEvent userMessage(String text) {
+        return new BuildEvent(BuildEventType.USER_MESSAGE, text, null, null, System.currentTimeMillis());
     }
 
     public static BuildEvent error(String text) {

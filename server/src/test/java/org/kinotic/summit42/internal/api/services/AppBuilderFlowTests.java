@@ -298,6 +298,56 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     @Test
+    public void testAMessageSentDuringAStepIsReadAfterItsToolCalls() throws Exception {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        anthropic.replyWithTextAndToolCallAfterPause("Let me read the skill first.", Duration.ofSeconds(2), "readSkill",
+                                                     new JsonObject().put("skill", "frontend"));
+        anthropic.replyWithText("Red it is.");
+
+        Flux<BuildEvent> turn = chatAs(participant, "todo", "Build a todo app").replay().autoConnect();
+        Assertions.assertEquals("Let me read the skill first.", turn.blockFirst(TIMEOUT).getText());
+        List<BuildEvent> steered = chat("todo", "Make it red");
+        List<BuildEvent> events = turn.collectList().block(TIMEOUT);
+        Conversation conversation = await(callAs(participant, service -> service.findConversation("todo")));
+
+        Assertions.assertEquals(List.of(), steered);
+        Assertions.assertEquals(List.of("TEXT Let me read the skill first.",
+                                        "PROGRESS Reading the frontend skill",
+                                        "USER_MESSAGE Make it red",
+                                        "TEXT Red it is."),
+                                events.stream().map(event -> event.getType() + " " + event.getText()).toList());
+        // the message follows the tool's result in the step Claude reads it in
+        JsonArray sent = anthropic.requests().get(1).getJsonArray("messages");
+        Assertions.assertEquals("tool_result", sent.getJsonObject(sent.size() - 2).getJsonArray("content").getJsonObject(0).getString("type"));
+        Assertions.assertEquals("Make it red", textOf(sent.getJsonObject(sent.size() - 1).getValue("content")));
+        Assertions.assertEquals(List.of("Build a todo app", "Let me read the skill first.", "Make it red", "Red it is."),
+                                conversation.getMessages().stream().map(ChatMessage::getText).toList());
+        Assertions.assertFalse(sessionOf("todo").isTurnRunning());
+    }
+
+    @Test
+    public void testAMessageSentAfterTheLastStepGetsAnAnswerOfItsOwnInTheSameTurn() throws Exception {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        anthropic.replyWithTextAfterPause("Your todo app ", Duration.ofSeconds(2), "is ready");
+        anthropic.replyWithText("It is blue now.");
+
+        Flux<BuildEvent> turn = chatAs(participant, "todo", "Build a todo app").replay().autoConnect();
+        Assertions.assertEquals("Your todo app ", turn.blockFirst(TIMEOUT).getText());
+        List<BuildEvent> steered = chat("todo", "Make it blue");
+        List<BuildEvent> events = turn.collectList().block(TIMEOUT);
+        Conversation conversation = await(callAs(participant, service -> service.findConversation("todo")));
+
+        Assertions.assertEquals(List.of(), steered);
+        Assertions.assertEquals(List.of("TEXT Your todo app ", "TEXT is ready", "USER_MESSAGE Make it blue", "TEXT It is blue now."),
+                                events.stream().map(event -> event.getType() + " " + event.getText()).toList());
+        Assertions.assertEquals(List.of("Build a todo app", "Your todo app is ready", "Make it blue"),
+                                textsOf(anthropic.requests().get(1)));
+        Assertions.assertEquals(List.of("Build a todo app", "Your todo app is ready", "Make it blue", "It is blue now."),
+                                conversation.getMessages().stream().map(ChatMessage::getText).toList());
+        Assertions.assertFalse(sessionOf("todo").isTurnRunning());
+    }
+
+    @Test
     public void testFollowRunningTurnCompletesAtOnceWhenNoTurnRuns() {
         projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
         anthropic.replyWithText("Done");

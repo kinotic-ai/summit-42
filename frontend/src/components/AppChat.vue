@@ -58,6 +58,10 @@
           </div>
           <div v-if="turn.error" class="msg__error" role="alert">{{ turn.error }}</div>
         </div>
+        <div v-for="(message, index) in queued" :key="`queued-${index}`" class="msg msg--user msg--queued">
+          <div class="msg__bubble">{{ message }}</div>
+          <div class="msg__note">Claude reads this after its current step</div>
+        </div>
       </template>
     </div>
 
@@ -67,7 +71,7 @@
                   v-model="draft"
                   rows="1"
                   class="composer__input"
-                  :placeholder="turns.length === 0 ? `Describe what ${app.name} should do…` : 'Ask for a change…'"
+                  :placeholder="placeholder"
                   :disabled="loading || loadError !== null"
                   aria-label="Message"
                   @keydown="onKeydown"
@@ -83,7 +87,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { Subscription } from 'rxjs'
+import type { Observable, Subscription } from 'rxjs'
 import AppIcon from '@/components/AppIcon.vue'
 import {
   APP_BUILDER,
@@ -145,6 +149,8 @@ const streaming = ref(false)
 const resetting = ref(false)
 // the reply the running turn streams into, the time of its last event, and a clock the elapsed times tick with
 const reply = ref<Turn | null>(null)
+/** Messages sent during the running turn that it has not read yet, in the order they were sent. */
+const queued = ref<string[]>([])
 const lastEventAt = ref(0)
 const turnStartedAt = ref(0)
 const now = ref(Date.now())
@@ -153,13 +159,26 @@ const scroller = ref<HTMLElement | null>(null)
 const input = ref<HTMLTextAreaElement | null>(null)
 
 let subscription: Subscription | null = null
+// the stream the reply follows; a stream the reply no longer follows changes nothing
+let followed: object | null = null
+// where the running turn's replies start in turns: a message the turn reads ends one reply and starts the next
+let turnFrom = 0
 let clock: ReturnType<typeof setInterval> | null = null
 let contentObserver: MutationObserver | null = null
 // true while the reader is at the bottom of the messages, where new output keeps them
 let following = true
 
-const canSend = computed(() => !streaming.value && !loading.value && loadError.value === null
-                               && draft.value.trim().length > 0)
+const placeholder = computed(() => {
+  let ret = 'Ask for a change…'
+  if (turns.value.length === 0) {
+    ret = `Describe what ${props.app.name} should do…`
+  } else if (streaming.value) {
+    ret = 'Add to what Claude is doing…'
+  }
+  return ret
+})
+
+const canSend = computed(() => !loading.value && loadError.value === null && draft.value.trim().length > 0)
 
 const activeStep = computed(() => (reply.value ? activeStepOf(reply.value) : null))
 
@@ -175,7 +194,7 @@ const thinking = computed(() => streaming.value && activeStep.value === null
 const progress = computed<BuildProgress | null>(() => {
   let ret: BuildProgress | null = null
   if (streaming.value && reply.value) {
-    const last = lastStepOf(reply.value)
+    const last = lastStepOf(turns.value.slice(turnFrom))
     let stage: BuildStage = 'PLANNING'
     if (last?.type === 'LIVE') {
       stage = 'LIVE'
@@ -272,32 +291,51 @@ async function load() {
 // the reply shows once the turn's first event replays, so a load with no turn running shows no reply; a turn that ended
 // between reading the conversation and following it replays nothing, and the conversation read again holds its reply
 function followRunningTurn() {
-  let turn: Turn | null = null
-  subscription = APP_BUILDER.followRunningTurn(props.app.applicationId).subscribe({
+  followTurn(APP_BUILDER.followRunningTurn(props.app.applicationId), 'Could not follow the running build.')
+}
+
+// follows a turn's events into the reply, which starts at the first event unless it shows already
+function followTurn(events: Observable<BuildEvent>, failure: string) {
+  const stream = {}
+  followed = stream
+  subscription = events.subscribe({
     next: (event: BuildEvent) => {
-      turn ??= startTurn(event.timestamp)
-      receive(turn, event)
+      if (followed === stream) {
+        if (!streaming.value) {
+          startTurn(event.timestamp)
+        }
+        receive(event)
+      }
     },
     error: (err: unknown) => {
-      if (turn) {
-        turn.error = errorText(err, 'Could not follow the running build.')
-        finishTurn(turn)
-      } else {
-        subscription = null
-        notice.value = errorText(err, 'Could not follow the running build.')
+      if (followed === stream) {
+        if (reply.value) {
+          reply.value.error = errorText(err, failure)
+          finishTurn()
+        } else {
+          stopFollowing()
+          notice.value = errorText(err, failure)
+        }
       }
     },
     complete: () => {
-      if (turn) {
-        finishTurn(turn)
-      } else {
-        subscription = null
-        if (turns.value[turns.value.length - 1]?.role === 'USER') {
-          void reload()
+      if (followed === stream) {
+        if (reply.value) {
+          finishTurn()
+        } else {
+          stopFollowing()
+          if (turns.value[turns.value.length - 1]?.role === 'USER') {
+            void reload()
+          }
         }
       }
     },
   })
+}
+
+function stopFollowing() {
+  subscription = null
+  followed = null
 }
 
 async function reload() {
@@ -308,23 +346,52 @@ async function reload() {
   }
 }
 
-// adds the assistant's turn the stream fills, started at the given time
-function startTurn(startedAt: number): Turn {
-  turns.value.push({ role: 'ASSISTANT', parts: [], error: null })
-  // the pushed object is wrapped in a reactive proxy, which the stream's updates must go through to render
-  const turn = turns.value[turns.value.length - 1] as Turn
-  reply.value = turn
+// starts the running turn's first reply at the given time
+function startTurn(startedAt: number) {
+  turnFrom = turns.value.length
+  addReply()
   streaming.value = true
   lastEventAt.value = startedAt
   turnStartedAt.value = startedAt
   now.value = Date.now()
   clock = setInterval(() => { now.value = Date.now() }, 1000)
-  return turn
 }
 
-function receive(turn: Turn, event: BuildEvent) {
+// adds the assistant's reply the stream fills
+function addReply() {
+  turns.value.push({ role: 'ASSISTANT', parts: [], error: null })
+  // the pushed object is wrapped in a reactive proxy, which the stream's updates must go through to render
+  reply.value = turns.value[turns.value.length - 1] as Turn
+}
+
+function receive(event: BuildEvent) {
   lastEventAt.value = event.timestamp
-  apply(turn, event)
+  if (event.type === 'USER_MESSAGE') {
+    read(event.text ?? '')
+  } else if (reply.value) {
+    apply(reply.value, event)
+  }
+}
+
+// a message the turn reads ends the reply so far, and the turn goes on in a reply below it
+function read(message: string) {
+  const turn = reply.value
+  if (turn) {
+    settleActiveStep(turn, 'done')
+    if (turn.parts.length === 0 && !turn.error) {
+      turns.value = turns.value.filter(listed => listed !== turn)
+    }
+  }
+  unqueue(message)
+  turns.value.push({ role: 'USER', parts: textParts(message), error: null })
+  addReply()
+}
+
+function unqueue(message: string) {
+  const index = queued.value.indexOf(message)
+  if (index >= 0) {
+    queued.value.splice(index, 1)
+  }
 }
 
 function send() {
@@ -334,19 +401,55 @@ function send() {
   draft.value = ''
   notice.value = null
   void nextTick(autosize)
-  // a follow still waiting for a running turn is replaced by the turn this message starts
-  subscription?.unsubscribe()
-  turns.value.push({ role: 'USER', parts: textParts(message), error: null })
-  const turn = startTurn(Date.now())
+  if (streaming.value) {
+    steer(message)
+  } else {
+    // a follow still waiting for a running turn is replaced by the turn this message starts
+    subscription?.unsubscribe()
+    turns.value.push({ role: 'USER', parts: textParts(message), error: null })
+    startTurn(Date.now())
+    followTurn(APP_BUILDER.chat(props.app.applicationId, message), 'The builder stopped unexpectedly.')
+  }
   void scrollToBottom()
+}
 
-  subscription = APP_BUILDER.chat(props.app.applicationId, message).subscribe({
-    next: (event: BuildEvent) => receive(turn, event),
-    error: (err: unknown) => {
-      turn.error = errorText(err, 'The builder stopped unexpectedly.')
-      finishTurn(turn)
+// a message sent during a turn waits below the reply until the turn reads it; one sent after the turn's last step gets
+// a turn of its own, whose events start once the running turn has ended
+function steer(message: string) {
+  queued.value.push(message)
+  let own: object | null = null
+  const sent: Subscription = APP_BUILDER.chat(props.app.applicationId, message).subscribe({
+    next: (event: BuildEvent) => {
+      if (own === null) {
+        if (streaming.value) {
+          subscription?.unsubscribe()
+          finishTurn()
+        }
+        unqueue(message)
+        turns.value.push({ role: 'USER', parts: textParts(message), error: null })
+        startTurn(event.timestamp)
+        own = {}
+        followed = own
+        subscription = sent
+      }
+      if (followed === own) {
+        receive(event)
+      }
     },
-    complete: () => finishTurn(turn),
+    error: (err: unknown) => {
+      if (own === null) {
+        unqueue(message)
+        notice.value = errorText(err, 'Could not send your message.')
+      } else if (followed === own && reply.value) {
+        reply.value.error = errorText(err, 'The builder stopped unexpectedly.')
+        finishTurn()
+      }
+    },
+    complete: () => {
+      if (own !== null && followed === own) {
+        finishTurn()
+      }
+    },
   })
 }
 
@@ -355,8 +458,9 @@ function activeStepOf(turn: Turn): Step | null {
   return last?.type === 'steps' ? last.steps.find(step => step.state === 'active') ?? null : null
 }
 
-function lastStepOf(turn: Turn): Step | null {
-  const runs = turn.parts.filter(part => part.type === 'steps')
+// the last step of the replies, which are in order
+function lastStepOf(replies: Turn[]): Step | null {
+  const runs = replies.flatMap(turn => turn.parts).filter(part => part.type === 'steps')
   const steps = runs[runs.length - 1]?.steps ?? []
   return steps[steps.length - 1] ?? null
 }
@@ -410,14 +514,23 @@ function apply(turn: Turn, event: BuildEvent) {
   }
 }
 
-function finishTurn(turn: Turn) {
-  settleActiveStep(turn, turn.error ? 'failed' : 'done')
+function finishTurn() {
+  const turn = reply.value
   streaming.value = false
-  subscription = null
+  stopFollowing()
   reply.value = null
   stopClock()
-  if (turn.parts.length === 0 && !turn.error) {
-    turns.value = turns.value.filter(listed => listed !== turn)
+  if (turn) {
+    settleActiveStep(turn, turn.error ? 'failed' : 'done')
+    if (turn.parts.length === 0 && !turn.error) {
+      turns.value = turns.value.filter(listed => listed !== turn)
+    }
+    // the messages a failed turn never read go back to the composer, to send again
+    if (turn.error && queued.value.length > 0) {
+      draft.value = [...queued.value, draft.value].filter(text => text.length > 0).join('\n\n')
+      queued.value = []
+      void nextTick(autosize)
+    }
   }
   void nextTick(() => input.value?.focus())
 }
@@ -641,6 +754,15 @@ async function startOver() {
   background: var(--bubble);
 }
 
+.msg--queued .msg__bubble {
+  opacity: 0.6;
+}
+
+.msg__note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .msg__error {
   max-width: 88%;
   padding: 0.6rem 0.9rem;
@@ -811,7 +933,16 @@ async function startOver() {
   }
 
   .msg__bubble,
-  .msg__error {
+  .msg--queued .msg__bubble {
+  opacity: 0.6;
+}
+
+.msg__note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.msg__error {
     max-width: 92%;
   }
 

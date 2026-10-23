@@ -85,6 +85,21 @@ public class FakeAnthropic implements AutoCloseable {
     }
 
     /**
+     * Queues a reply of text that pauses before it calls the tool with the arguments given.
+     */
+    public void replyWithTextAndToolCallAfterPause(String text, Duration pause, String toolName, JsonObject input) {
+        replies.add(request -> {
+            start(request);
+            textBlock(0, text).forEach(event -> write(request, event));
+            List<JsonObject> toolCall = toolUseBlock(1, toolName, input);
+            vertx.setTimer(pause.toMillis(), timerId -> {
+                toolCall.forEach(event -> write(request, event));
+                end(request, "tool_use");
+            });
+        });
+    }
+
+    /**
      * Queues a reply that calls the tool with no arguments.
      */
     public void replyWithToolCall(String toolName) {
