@@ -35,7 +35,7 @@
       </main>
       <main v-else-if="!app" class="page">
         <h1 class="page-title">App not found</h1>
-        <p class="page-subtitle">This workspace has no app with that id. <RouterLink to="/">See all apps</RouterLink></p>
+        <p class="page-subtitle">This organization has no app with that id. <RouterLink to="/">See all apps</RouterLink></p>
       </main>
       <RouterView v-else v-slot="{ Component }">
         <component :is="Component" :app="app" />

@@ -1,6 +1,7 @@
 package org.kinotic.summit42.internal.api.services;
 
 import lombok.RequiredArgsConstructor;
+import okhttp3.Interceptor;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.summit42.api.config.Summit42Properties;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
@@ -12,9 +13,11 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.Date;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Builds the {@link ChatClient} the app builder talks to Claude through, from the platform's LLM configuration
@@ -26,6 +29,15 @@ public class ChatClientFactory {
 
     // a turn writes whole files as tool arguments, which needs far more than a chat reply's default
     private static final int DEFAULT_MAX_TOKENS = 32_000;
+    // the providers' clients end a call at 60 seconds by default, yet a response writing whole files streams for many
+    // minutes; a zero timeout lets the call run until the provider ends it
+    private static final Duration NO_TIMEOUT = Duration.ZERO;
+    // a response streams its tokens as they are generated, so one that sends nothing for this long has lost its
+    // connection or its server, and its call fails rather than holding the turn open
+    private static final Duration IDLE_TIMEOUT = Duration.ofMinutes(5);
+    // set on each call's chain, since the providers' clients apply NO_TIMEOUT as the read timeout of every call
+    private static final Interceptor IDLE_TIMEOUT_INTERCEPTOR =
+            chain -> chain.withReadTimeout((int) IDLE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).proceed(chain.request());
 
     private final LlmConfigurationServiceProxy llmConfigurationService;
     private final SecurityContext securityContext;
@@ -75,21 +87,25 @@ public class ChatClientFactory {
         int maxTokens = configuration.getMaxTokens() != null ? configuration.getMaxTokens() : DEFAULT_MAX_TOKENS;
         return switch (configuration.getProvider()) {
             case ANTHROPIC -> AnthropicChatModel.builder()
+                    .httpClientBuilderCustomizer(http -> http.interceptor(IDLE_TIMEOUT_INTERCEPTOR))
                     .options(AnthropicChatOptions.builder()
                                      .apiKey(apiKey)
                                      .baseUrl(configuration.getEndpoint())
                                      .model(configuration.getModel())
                                      .maxTokens(maxTokens)
                                      .temperature(configuration.getTemperature())
+                                     .timeout(NO_TIMEOUT)
                                      .build())
                     .build();
             case OPENAI -> OpenAiChatModel.builder()
+                    .httpClientBuilderCustomizer(http -> http.interceptor(IDLE_TIMEOUT_INTERCEPTOR))
                     .options(OpenAiChatOptions.builder()
                                      .apiKey(apiKey)
                                      .baseUrl(configuration.getEndpoint())
                                      .model(configuration.getModel())
                                      .maxCompletionTokens(maxTokens)
                                      .temperature(configuration.getTemperature())
+                                     .timeout(NO_TIMEOUT)
                                      .build())
                     .build();
         };

@@ -33,7 +33,7 @@
 import { ref } from 'vue'
 import { createApp, type BuilderApp } from '@/api/appBuilder'
 
-/** Names a new app and creates it in the workspace. */
+/** Names a new app and creates it in the organization. */
 defineProps<{
   /** True to stretch the submit button across the form. */
   block?: boolean

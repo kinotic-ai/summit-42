@@ -57,7 +57,7 @@ public class AppBuilderToolsTests {
 
     @Test
     public void testReadKinoticDocsListsThePagesForAnUnknownPage() {
-        String answer = tools.readKinoticDocs("05.persistence/99.no-such-page.md");
+        String answer = tools.readKinoticDocs("05.persistence/99.no-such-page.md", contextOf(newTurn()));
 
         Assertions.assertTrue(answer.startsWith("Unknown page. The pages are:"), answer);
         Assertions.assertTrue(answer.contains("\n05.persistence/02.defining-entities.md\n"), answer);

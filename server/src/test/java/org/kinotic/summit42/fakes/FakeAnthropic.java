@@ -6,6 +6,7 @@ import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
@@ -21,9 +22,11 @@ public class FakeAnthropic implements AutoCloseable {
 
     private final Queue<Consumer<HttpServerRequest>> replies = new ConcurrentLinkedQueue<>();
     private final List<JsonObject> requests = new CopyOnWriteArrayList<>();
+    private final Vertx vertx;
     private final HttpServer server;
 
     public FakeAnthropic(Vertx vertx) {
+        this.vertx = vertx;
         server = vertx.createHttpServer()
                       .requestHandler(request -> request.body().onSuccess(body -> {
                           requests.add(body.toJsonObject());
@@ -51,13 +54,33 @@ public class FakeAnthropic implements AutoCloseable {
      * Queues a reply of text, streamed in the chunks given.
      */
     public void replyWithText(String... chunks) {
+        replies.add(request -> stream(request, textBlock(0, chunks), "end_turn"));
+    }
+
+    /**
+     * Queues a reply of text that streams its first chunk, pauses, then streams the second.
+     */
+    public void replyWithTextAfterPause(String first, Duration pause, String second) {
         replies.add(request -> {
-            List<JsonObject> events = new ArrayList<>();
-            events.add(blockStart(new JsonObject().put("type", "text").put("text", "")));
-            for (String chunk : chunks) {
-                events.add(delta(new JsonObject().put("type", "text_delta").put("text", chunk)));
-            }
-            stream(request, events, "end_turn");
+            start(request);
+            write(request, blockStart(0, new JsonObject().put("type", "text").put("text", "")));
+            write(request, textDelta(0, first));
+            vertx.setTimer(pause.toMillis(), timerId -> {
+                write(request, textDelta(0, second));
+                write(request, blockStop(0));
+                end(request, "end_turn");
+            });
+        });
+    }
+
+    /**
+     * Queues a reply of text followed by a call of the tool with the arguments given.
+     */
+    public void replyWithTextAndToolCall(String text, String toolName, JsonObject input) {
+        replies.add(request -> {
+            List<JsonObject> events = new ArrayList<>(textBlock(0, text));
+            events.addAll(toolUseBlock(1, toolName, input));
+            stream(request, events, "tool_use");
         });
     }
 
@@ -72,14 +95,7 @@ public class FakeAnthropic implements AutoCloseable {
      * Queues a reply that calls the tool with the arguments given.
      */
     public void replyWithToolCall(String toolName, JsonObject input) {
-        replies.add(request -> stream(request,
-                                      List.of(blockStart(new JsonObject().put("type", "tool_use")
-                                                                         .put("id", "toolu_" + requests.size())
-                                                                         .put("name", toolName)
-                                                                         .put("input", new JsonObject())),
-                                              delta(new JsonObject().put("type", "input_json_delta")
-                                                                    .put("partial_json", input.encode()))),
-                                      "tool_use"));
+        replies.add(request -> stream(request, toolUseBlock(0, toolName, input), "tool_use"));
     }
 
     /**
@@ -109,8 +125,14 @@ public class FakeAnthropic implements AutoCloseable {
         server.close();
     }
 
-    // one content block of the events given, framed by the message's start and end
+    // the content block events given, framed by the message's start and end
     private static void stream(HttpServerRequest request, List<JsonObject> blockEvents, String stopReason) {
+        start(request);
+        blockEvents.forEach(event -> write(request, event));
+        end(request, stopReason);
+    }
+
+    private static void start(HttpServerRequest request) {
         request.response()
                .setChunked(true)
                .putHeader("Content-Type", "text/event-stream");
@@ -123,8 +145,9 @@ public class FakeAnthropic implements AutoCloseable {
                                                                        .putNull("stop_reason")
                                                                        .putNull("stop_sequence")
                                                                        .put("usage", usage())));
-        blockEvents.forEach(event -> write(request, event));
-        write(request, new JsonObject().put("type", "content_block_stop").put("index", 0));
+    }
+
+    private static void end(HttpServerRequest request, String stopReason) {
         write(request, new JsonObject().put("type", "message_delta")
                                        .put("delta", new JsonObject().put("stop_reason", stopReason).putNull("stop_sequence"))
                                        .put("usage", usage()));
@@ -132,12 +155,39 @@ public class FakeAnthropic implements AutoCloseable {
         request.response().end();
     }
 
-    private static JsonObject blockStart(JsonObject block) {
-        return new JsonObject().put("type", "content_block_start").put("index", 0).put("content_block", block);
+    private static List<JsonObject> textBlock(int index, String... chunks) {
+        List<JsonObject> ret = new ArrayList<>();
+        ret.add(blockStart(index, new JsonObject().put("type", "text").put("text", "")));
+        for (String chunk : chunks) {
+            ret.add(textDelta(index, chunk));
+        }
+        ret.add(blockStop(index));
+        return ret;
     }
 
-    private static JsonObject delta(JsonObject delta) {
-        return new JsonObject().put("type", "content_block_delta").put("index", 0).put("delta", delta);
+    private List<JsonObject> toolUseBlock(int index, String toolName, JsonObject input) {
+        return List.of(blockStart(index, new JsonObject().put("type", "tool_use")
+                                                         .put("id", "toolu_" + requests.size() + "_" + index)
+                                                         .put("name", toolName)
+                                                         .put("input", new JsonObject())),
+                       delta(index, new JsonObject().put("type", "input_json_delta").put("partial_json", input.encode())),
+                       blockStop(index));
+    }
+
+    private static JsonObject blockStart(int index, JsonObject block) {
+        return new JsonObject().put("type", "content_block_start").put("index", index).put("content_block", block);
+    }
+
+    private static JsonObject textDelta(int index, String text) {
+        return delta(index, new JsonObject().put("type", "text_delta").put("text", text));
+    }
+
+    private static JsonObject delta(int index, JsonObject delta) {
+        return new JsonObject().put("type", "content_block_delta").put("index", index).put("delta", delta);
+    }
+
+    private static JsonObject blockStop(int index) {
+        return new JsonObject().put("type", "content_block_stop").put("index", index);
     }
 
     private static JsonObject usage() {

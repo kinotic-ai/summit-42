@@ -1,34 +1,47 @@
 <template>
-  <AuthShell title="Welcome back" :subtitle="workspace ? `Sign in to the ${workspace} workspace.` : 'Sign in to keep building.'">
+  <AuthShell title="Welcome back" subtitle="Sign in to keep building.">
     <template #hero>
       <HeroPitch />
     </template>
 
     <div v-if="error" class="alert alert--error" role="alert">{{ error }}</div>
 
-    <!-- the workspaces a GitHub sign-in found the account a member of; the person picks one -->
+    <!-- the organizations a GitHub sign-in found the account a member of; the person picks one -->
     <div v-if="choices.length > 0" class="choices">
-      <p class="muted">Your account belongs to several workspaces. Choose one to sign in to.</p>
+      <p class="muted">Your account belongs to several organizations. Choose one to sign in to.</p>
       <button v-for="choice in choices"
               :key="choice"
               type="button"
               class="btn btn--secondary btn--block"
-              @click="selectWorkspace(choice)">
+              @click="continueTo(choice)">
         {{ choice }}
       </button>
+      <div class="divider">or</div>
     </div>
 
-    <ProviderButton v-else-if="workspace && workspaceGitHub"
-                    :action="workspaceLoginUrl(workspace, workspaceGitHub.id, referer)"
-                    :provider="GITHUB_PROVIDER"
-                    label="GitHub"
-                    verb="Continue" />
+    <template v-if="githubOffered">
+      <ProviderButton :action="socialLoginUrl(GITHUB_PROVIDER, referer)"
+                      :provider="GITHUB_PROVIDER"
+                      :label="providerDisplayName(GITHUB_PROVIDER)"
+                      verb="Continue" />
+      <div class="divider">or</div>
+    </template>
 
-    <ProviderButton v-else-if="offered"
-                    :action="socialLoginUrl(GITHUB_PROVIDER, referer)"
-                    :provider="GITHUB_PROVIDER"
-                    label="GitHub"
-                    verb="Continue" />
+    <!-- every other way to sign in is the organization's own, so its page lists them -->
+    <form @submit.prevent="continueToTyped">
+      <div class="field">
+        <label for="organization">Organization</label>
+        <input id="organization"
+               v-model="organization"
+               class="input"
+               autocapitalize="none"
+               autocorrect="off"
+               spellcheck="false"
+               placeholder="e.g. janes-apps" />
+        <span class="hint">Its name or ID, for signing in with your organization's identity provider or a password.</span>
+      </div>
+      <button type="submit" class="btn btn--secondary btn--block">Continue</button>
+    </form>
 
     <template #footer>
       New to Summit 42? <RouterLink to="/signup">Create an account</RouterLink>
@@ -44,48 +57,44 @@ import HeroPitch from '@/components/HeroPitch.vue'
 import ProviderButton from '@/components/ProviderButton.vue'
 import {
   authErrorMessage,
+  fetchOrganizationChoices,
   fetchSocialProviders,
-  fetchWorkspaceChoices,
-  fetchWorkspaceProviders,
   GITHUB_PROVIDER,
-  type LoginProvider,
+  providerDisplayName,
+  refererOf,
+  rememberedOrganization,
   socialLoginUrl,
-  workspaceLoginUrl,
+  toOrganizationId,
 } from '@/api/auth'
 import { SESSION } from '@/api/session'
-
-const UNAVAILABLE = 'Signing in with GitHub is not available right now. Please try again later.'
 
 const route = useRoute()
 const router = useRouter()
 
-const offered = ref(false)
+const githubOffered = ref(false)
 const choices = ref<string[]>([])
-const workspace = ref<string | null>(null)
-const workspaceGitHub = ref<LoginProvider | null>(null)
+const organization = ref(rememberedOrganization() ?? '')
 const error = ref<string | null>(null)
 
-// the page the router guard sent the visitor here from, where a sign-in returns to; only a path within this UI
-const referer = computed(() => {
-  const value = route.query.referer
-  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\')
-    ? value
-    : null
-})
+// the page the router guard sent the visitor here from, where a sign-in returns to
+const referer = computed(() => refererOf(route.query.referer))
 
 onMounted(async () => {
   if (SESSION.connected) {
     await router.replace(referer.value ?? '/')
     return
   }
+  const remembered = rememberedOrganization()
+  // a browser that signed in before goes straight to its organization's page, unless a sign-in just failed here
+  if (remembered && typeof route.query.error !== 'string') {
+    await router.replace(organizationPage(remembered))
+    return
+  }
   await consumeError()
   try {
-    offered.value = (await fetchSocialProviders()).includes(GITHUB_PROVIDER)
+    githubOffered.value = (await fetchSocialProviders()).includes(GITHUB_PROVIDER)
   } catch {
-    // an unreachable gateway leaves offered false, which shows UNAVAILABLE
-  }
-  if (!offered.value && choices.value.length === 0) {
-    error.value ??= UNAVAILABLE
+    // an organization's own page still signs in without the GitHub button
   }
 })
 
@@ -97,7 +106,7 @@ async function consumeError() {
     await router.replace({ query: referer.value ? { referer: referer.value } : {} })
     if (code === 'multiple_organizations') {
       try {
-        choices.value = await fetchWorkspaceChoices()
+        choices.value = await fetchOrganizationChoices()
       } catch {
         choices.value = []
       }
@@ -108,21 +117,21 @@ async function consumeError() {
   }
 }
 
-// a workspace's sign-in lists the platform's GitHub registration, which signs the account in to that workspace
-async function selectWorkspace(organizationId: string) {
-  error.value = null
-  try {
-    const providers = await fetchWorkspaceProviders(organizationId)
-    workspaceGitHub.value = providers?.find(provider => provider.provider === GITHUB_PROVIDER) ?? null
-  } catch {
-    workspaceGitHub.value = null
-  }
-  if (workspaceGitHub.value) {
-    workspace.value = organizationId
-    choices.value = []
+function continueToTyped() {
+  const id = toOrganizationId(organization.value)
+  if (id) {
+    continueTo(id)
   } else {
-    error.value = UNAVAILABLE
+    error.value = 'Enter your organization\'s name or ID.'
   }
+}
+
+function continueTo(organizationId: string) {
+  void router.push(organizationPage(organizationId))
+}
+
+function organizationPage(organizationId: string) {
+  return { path: `/login/${encodeURIComponent(organizationId)}`, query: referer.value ? { referer: referer.value } : {} }
 }
 </script>
 

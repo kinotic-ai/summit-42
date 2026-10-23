@@ -37,7 +37,6 @@
             <h1 class="page-title">Apps</h1>
             <p class="page-subtitle">Everything you've built. Open one to keep changing it.</p>
           </div>
-          <button type="button" class="btn" @click="creating = true"><AppIcon name="plus" :stroke-width="2.25" /> New app</button>
         </div>
 
         <ul class="apps">
@@ -267,7 +266,7 @@ function open(app: BuilderApp) {
   padding: 1.25rem;
   border: 1px dashed rgba(255, 255, 255, 0.22);
   border-radius: var(--radius);
-  background: rgba(10, 20, 32, 0.45);
+  background: rgba(24, 39, 57, 0.4);
   color: var(--text);
   font-size: 0.9rem;
   cursor: pointer;
@@ -276,7 +275,7 @@ function open(app: BuilderApp) {
 
 .app-new:hover {
   border-color: var(--accent-border);
-  background: rgba(10, 20, 32, 0.65);
+  background: rgba(24, 39, 57, 0.6);
 }
 
 .app-new .icon {

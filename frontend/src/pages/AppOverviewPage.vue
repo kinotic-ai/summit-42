@@ -63,9 +63,9 @@
           <RouterLink :to="`/apps/${app.applicationId}/deployments`">All deployments</RouterLink>
         </div>
         <ul v-if="history.length > 0" class="activity">
-          <li v-for="(event, index) in history" :key="index">
-            <span class="activity__message">{{ event.message }}</span>
-            <span class="activity__when muted">{{ timeAgo(event['@timestamp']) }}</span>
+          <li v-for="(milestone, index) in history" :key="index">
+            <span class="activity__message">{{ milestone.text }}</span>
+            <span class="activity__when muted">{{ timeAgo(milestone.timestamp) }}</span>
           </li>
         </ul>
         <p v-else class="table__empty">{{ loading ? 'Loading…' : 'Nothing has been deployed yet.' }}</p>
@@ -77,10 +77,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { Kinotic, Pageable } from '@kinotic-ai/core'
-import type { Project, ProjectDeployment, WatchEvent } from '@kinotic-ai/management-api'
+import type { Project, ProjectDeployment } from '@kinotic-ai/management-api'
 import AppIcon from '@/components/AppIcon.vue'
 import type { BuilderApp } from '@/api/appBuilder'
-import { describePhase, findProjects, repoUrl } from '@/api/appProjects'
+import { describeHistory, describePhase, findProjects, repoUrl, type DeploymentMilestone } from '@/api/appProjects'
 import { copyText, errorText, timeAgo } from '@/api/format'
 
 /** An app at a glance: its link, its status, and what changed lately. */
@@ -88,7 +88,9 @@ const props = defineProps<{
   app: BuilderApp
 }>()
 
-const RECENT_EVENTS = 5
+// each deployment writes about ten history entries, of which describeHistory keeps two or three
+const RECENT_EVENTS = 50
+const RECENT_MILESTONES = 5
 
 const loading = ref(true)
 const loadError = ref<string | null>(null)
@@ -97,7 +99,7 @@ const deployment = ref<ProjectDeployment | null>(null)
 const typeCount = ref(0)
 const userCount = ref(0)
 const inviteCount = ref(0)
-const history = ref<WatchEvent[]>([])
+const history = ref<DeploymentMilestone[]>([])
 const copied = ref(false)
 
 const phase = computed(() => describePhase(deployment.value?.state?.observed?.phase))
@@ -129,7 +131,7 @@ async function load() {
         Kinotic.projects.findDeploymentHistory(project.value.id, Pageable.create(0, RECENT_EVENTS)),
       ])
       deployment.value = found
-      history.value = events.content ?? []
+      history.value = describeHistory(events.content ?? []).slice(0, RECENT_MILESTONES)
     }
   } catch (err) {
     loadError.value = errorText(err, `Could not load ${props.app.name}'s details.`)

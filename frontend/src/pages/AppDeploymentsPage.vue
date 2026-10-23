@@ -59,9 +59,9 @@
           <table v-if="history.length > 0" class="table">
             <thead><tr><th>What happened</th><th>When</th></tr></thead>
             <tbody>
-              <tr v-for="(event, index) in history" :key="index">
-                <td>{{ event.message }}</td>
-                <td class="table__when">{{ timeAgo(event['@timestamp']) }}</td>
+              <tr v-for="(milestone, index) in history" :key="index">
+                <td>{{ milestone.text }}</td>
+                <td class="table__when">{{ timeAgo(milestone.timestamp) }}</td>
               </tr>
             </tbody>
           </table>
@@ -75,9 +75,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { Kinotic, Pageable } from '@kinotic-ai/core'
-import { DeploymentStatusType, type Project, type ProjectDeployment, type UiDeployment, type WatchEvent } from '@kinotic-ai/management-api'
+import { DeploymentStatusType, type Project, type ProjectDeployment, type UiDeployment } from '@kinotic-ai/management-api'
 import type { BuilderApp } from '@/api/appBuilder'
-import { describePhase, findProjects, repoUrl } from '@/api/appProjects'
+import { describeHistory, describePhase, findProjects, repoUrl, type DeploymentMilestone } from '@/api/appProjects'
 import { errorText, hostOf, timeAgo } from '@/api/format'
 
 /** Where an app's deployment stands, the pages it publishes, and what happened to it. */
@@ -85,14 +85,15 @@ const props = defineProps<{
   app: BuilderApp
 }>()
 
-const HISTORY_SIZE = 30
+// each deployment writes about ten history entries, of which describeHistory keeps two or three
+const HISTORY_SIZE = 100
 
 const loading = ref(true)
 const error = ref<string | null>(null)
 const project = ref<Project | null>(null)
 const deployment = ref<ProjectDeployment | null>(null)
 const uis = ref<UiDeployment[]>([])
-const history = ref<WatchEvent[]>([])
+const history = ref<DeploymentMilestone[]>([])
 
 const phase = computed(() => describePhase(deployment.value?.state?.observed?.phase))
 const liveSha = computed(() => deployment.value?.state?.observed?.commitSha ?? null)
@@ -123,7 +124,7 @@ async function load() {
         Kinotic.projects.findDeploymentHistory(project.value.id, Pageable.create(0, HISTORY_SIZE)),
       ])
       deployment.value = found
-      history.value = events.content ?? []
+      history.value = describeHistory(events.content ?? [])
     }
   } catch (err) {
     error.value = errorText(err, 'Could not load the deployments.')

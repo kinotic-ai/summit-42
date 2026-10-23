@@ -4,7 +4,7 @@
       <div class="page__header">
         <div>
           <h1 class="page-title">Members</h1>
-          <p class="page-subtitle">People who can build and change apps in this workspace.</p>
+          <p class="page-subtitle">People who can build and change apps in this organization.</p>
         </div>
         <button type="button" class="btn" @click="inviting = true"><AppIcon name="plus" :stroke-width="2.25" /> Invite member</button>
       </div>
@@ -55,10 +55,10 @@
 
     <InviteDrawer v-if="inviting"
                   title="Invite member"
-                  subtitle="They get an email with a link to join this workspace."
+                  subtitle="They get an email with a link to join this organization."
                   :invite="invite"
                   @close="inviting = false">
-      <p class="muted invite-note">Members see every app in the workspace and can change any of them in the chat.</p>
+      <p class="muted invite-note">Members see every app in the organization and can change any of them in the chat.</p>
     </InviteDrawer>
   </main>
 </template>
@@ -73,7 +73,7 @@ import { INVITATIONS } from '@/api/invitations'
 import { errorText, formatDate, initialsOf } from '@/api/format'
 import { SESSION } from '@/api/session'
 
-/** The workspace's members, and the people invited to join it. */
+/** The organization's members, and the people invited to join it. */
 const MAX_ROWS = 200
 
 const loading = ref(true)
@@ -161,7 +161,7 @@ function setEnabled(member: OrganizationMember) {
 }
 
 function remove(member: OrganizationMember) {
-  if (window.confirm(`Remove ${member.displayName || member.email} from the workspace?`)) {
+  if (window.confirm(`Remove ${member.displayName || member.email} from the organization?`)) {
     void act(member, () => Kinotic.members.removeMember(member.id!), 'Could not remove the member.')
   }
 }

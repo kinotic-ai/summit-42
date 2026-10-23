@@ -22,6 +22,7 @@ import org.kinotic.management.api.services.ApplicationService;
 import org.kinotic.management.api.services.ProjectService;
 import org.kinotic.management.api.services.deployment.UiDeploymentService;
 import org.kinotic.summit42.api.model.BuildEvent;
+import org.kinotic.summit42.api.model.BuildEventType;
 import org.kinotic.summit42.api.model.BuilderApp;
 import org.kinotic.summit42.api.model.ChatMessage;
 import org.kinotic.summit42.api.model.ChatRole;
@@ -201,8 +202,9 @@ public class DefaultAppBuilderService implements AppBuilderService {
         Sinks.Many<BuildEvent> progress = Sinks.many().unicast().onBackpressureBuffer();
         BuilderTurn turn = new BuilderTurn(participant, session, projectId, skills,
                                            event -> progress.emitNext(event, RETRY_CONCURRENT_EMIT));
-        // appended on the model's stream and read by a cancel on another thread
+        // appended on the turn's stream and read by a cancel on another thread
         StringBuffer reply = new StringBuffer();
+        AtomicBoolean stepSinceText = new AtomicBoolean();
         AtomicBoolean ended = new AtomicBoolean();
 
         Flux<BuildEvent> answer =
@@ -213,10 +215,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
                                                  .toolContext(Map.of(AppBuilderTools.TURN, turn))
                                                  .stream()
                                                  .content())
-                    .map(text -> {
-                        reply.append(text);
-                        return BuildEvent.text(text);
-                    })
+                    .map(BuildEvent::text)
                     .onErrorResume(e -> failure(session.getApplicationKey(), e))
                     // the progress stream ends with the answer, so the merged turn completes with it
                     .doFinally(signal -> progress.emitComplete(RETRY_CONCURRENT_EMIT));
@@ -236,6 +235,17 @@ public class DefaultAppBuilderService implements AppBuilderService {
             }
         };
         return Flux.merge(answer, progress.asFlux())
+                   .doOnNext(event -> {
+                       // text resumed after a tool call's step starts a new paragraph, as the chat shows it apart
+                       if (event.getType() != BuildEventType.TEXT) {
+                           stepSinceText.set(true);
+                       } else {
+                           if (stepSinceText.getAndSet(false) && !reply.isEmpty()) {
+                               reply.append("\n\n");
+                           }
+                           reply.append(event.getText());
+                       }
+                   })
                    .doOnTerminate(endTurn)
                    .doOnCancel(endTurn);
     }

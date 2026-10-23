@@ -30,7 +30,7 @@ defineProps<{
 
 <style scoped>
 .auth {
-  --photo-dim: 0.35;
+  --photo-dim: 0.2;
   min-height: 100%;
   display: flex;
   align-items: center;

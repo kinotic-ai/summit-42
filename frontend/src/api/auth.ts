@@ -12,8 +12,63 @@ export interface LoginProvider {
     provider: string | null
 }
 
-/** The provider key of GitHub, the one way to sign up for and sign in to Summit 42. */
+/** The provider key of GitHub, which every organization signs up with. */
 export const GITHUB_PROVIDER = 'github'
+
+// the organization this browser last signed in to, so a returning member only confirms it
+const LAST_ORGANIZATION_KEY = 'summit42.lastOrganization'
+
+/** The id of the organization this browser last signed in to, or null. */
+export function rememberedOrganization(): string | null {
+    let ret: string | null = null
+    try {
+        ret = localStorage.getItem(LAST_ORGANIZATION_KEY)
+    } catch {
+        // storage blocked
+    }
+    return ret
+}
+
+/** Records the organization this browser signed in to. */
+export function rememberOrganization(organizationId: string): void {
+    try {
+        localStorage.setItem(LAST_ORGANIZATION_KEY, organizationId)
+    } catch {
+        // storage blocked
+    }
+}
+
+/** Forgets the organization this browser signed in to, so sign-in starts from the choice of organization. */
+export function forgetOrganization(): void {
+    try {
+        localStorage.removeItem(LAST_ORGANIZATION_KEY)
+    } catch {
+        // storage blocked
+    }
+}
+
+/**
+ * The organization id named by what a person typed: the id itself, or the organization's name, whose slug is its
+ * id. Empty when nothing was typed.
+ */
+export function toOrganizationId(typed: string): string {
+    return typed.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
+        .replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+/** The name a provider key (e.g. azure-ad) is shown by. */
+export function providerDisplayName(provider: string | null): string {
+    let ret: string
+    switch (provider) {
+        case 'azure-ad': ret = 'Microsoft'; break
+        case 'github': ret = 'GitHub'; break
+        case 'google': ret = 'Google'; break
+        case 'okta': ret = 'Okta'; break
+        case null: ret = 'your provider'; break
+        default: ret = provider.charAt(0).toUpperCase() + provider.slice(1)
+    }
+    return ret
+}
 
 /** The gateway's {"error": "..."} message from a failed response, or the fallback. */
 async function readError(res: Response, fallback: string): Promise<string> {
@@ -62,7 +117,7 @@ export async function logout(): Promise<void> {
     }
 }
 
-/** The provider keys (e.g. "github") of the platform's social registrations, offered when no workspace is known. */
+/** The provider keys (e.g. "github") of the platform's social registrations, offered when no organization is known. */
 export async function fetchSocialProviders(): Promise<string[]> {
     let ret: string[] = []
     const res = await fetch(apiUrl('/api/auth/org/login/providers'))
@@ -76,7 +131,7 @@ export async function fetchSocialProviders(): Promise<string[]> {
 }
 
 /** The sign-in methods the organization's login offers, or null when no organization has that id. */
-export async function fetchWorkspaceProviders(organizationId: string): Promise<LoginProvider[] | null> {
+export async function fetchOrganizationProviders(organizationId: string): Promise<LoginProvider[] | null> {
     let ret: LoginProvider[] | null = []
     const res = await fetch(apiUrl(`/api/auth/org/login/${encodeURIComponent(organizationId)}/providers`))
     if (res.status === 404) {
@@ -94,7 +149,7 @@ export async function fetchWorkspaceProviders(organizationId: string): Promise<L
  * The organizations a social sign-in found the identity a member of, offered for a short while after the gateway
  * redirected back with error=multiple_organizations.
  */
-export async function fetchWorkspaceChoices(): Promise<string[]> {
+export async function fetchOrganizationChoices(): Promise<string[]> {
     let ret: string[] = []
     const res = await fetch(apiUrl('/api/auth/org/login/choices'), { credentials: 'include' })
     if (res.ok) {
@@ -104,6 +159,13 @@ export async function fetchWorkspaceChoices(): Promise<string[]> {
         }
     }
     return ret
+}
+
+/** The referer query value a sign-in returns to: only a path within this UI, null for anything else. */
+export function refererOf(value: unknown): string | null {
+    return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\')
+        ? value
+        : null
 }
 
 // the gateway sends the browser back to the referer path of this UI once the sign-in completes
@@ -120,9 +182,14 @@ export function socialLoginUrl(provider: string, referer: string | null): string
 }
 
 /** Form action that starts a sign-in through one of the organization's configurations, returning as socialLoginUrl does. */
-export function workspaceLoginUrl(organizationId: string, configurationId: string, referer: string | null): string {
+export function organizationLoginUrl(organizationId: string, configurationId: string, referer: string | null): string {
     return withReferer(apiUrl(`/api/auth/org/login/${encodeURIComponent(organizationId)}/start/${encodeURIComponent(configurationId)}`),
                        referer)
+}
+
+/** Signs the organization's member in with their email and password, establishing the session. */
+export async function loginWithPassword(organizationId: string, email: string, password: string): Promise<void> {
+    await postJson(`/api/auth/org/login/${encodeURIComponent(organizationId)}`, { email, password }, 'Invalid credentials')
 }
 
 /** Form action that starts a social sign-up; it returns to this UI's /register?token=... */
@@ -130,9 +197,9 @@ export function socialSignupUrl(provider: string): string {
     return apiUrl('/api/auth/org/signup/social/start/' + encodeURIComponent(provider))
 }
 
-/** Finishes a social sign-up, creating the workspace, and establishes the session. */
+/** Finishes a social sign-up, creating the organization, and establishes the session. */
 export async function completeSocialSignUp(token: string, orgName: string): Promise<void> {
-    await postJson('/api/auth/org/signup/social/complete', { token, orgName, orgDescription: null }, 'Could not create your workspace')
+    await postJson('/api/auth/org/signup/social/complete', { token, orgName, orgDescription: null }, 'Could not create your organization')
 }
 
 /** An invitation as GET /api/auth/invite/details describes it to the invitee. */
@@ -140,7 +207,7 @@ export interface InviteDetails {
     email: string
     displayName: string | null
     organizationName: string | null
-    /** Set for an invitation into one of the workspace's apps, null for one into the workspace. */
+    /** Set for an invitation into one of the organization's apps, null for one into the organization. */
     applicationId: string | null
     invitedByName: string | null
     expiresAt: string
@@ -169,7 +236,7 @@ export async function fetchInvite(token: string): Promise<InviteDetails> {
 
 /**
  * Accepts an invitation with a password: a new one for a new account, or the existing account's. Accepting one into
- * the workspace establishes the session and resolves null; accepting one into an app resolves where its users sign in.
+ * the organization establishes the session and resolves null; accepting one into an app resolves where its users sign in.
  */
 export async function acceptInvite(token: string, password: string, displayName: string | null): Promise<AppInviteAccepted | null> {
     const res = await postJson('/api/auth/invite/accept', { token, password, displayName }, 'Could not accept the invitation')
@@ -181,7 +248,7 @@ export async function acceptInvite(token: string, password: string, displayName:
     return ret
 }
 
-/** Form action that accepts a workspace invitation through a provider; it returns to this UI's / once accepted. */
+/** Form action that accepts an organization invitation through a provider; it returns to this UI's / once accepted. */
 export function inviteProviderUrl(configurationId: string, token: string): string {
     return apiUrl(`/api/auth/invite/oidc/start/${encodeURIComponent(configurationId)}?token=${encodeURIComponent(token)}`)
 }
@@ -190,13 +257,12 @@ export function inviteProviderUrl(configurationId: string, token: string): strin
 export function authErrorMessage(code: string): string {
     let ret: string
     switch (code) {
-        case 'no_account': ret = 'No account is linked to that GitHub account. Create one first.'; break
-        case 'multiple_organizations': ret = 'Your account belongs to several workspaces, but the choice expired. Please sign in again.'; break
-        case 'account_exists': ret = 'An account already exists for that email or identity. Sign in instead.'; break
-        case 'account_disabled':
-        case 'user_disabled': ret = 'This account cannot sign in to the workspace.'; break
-        case 'email_mismatch': ret = 'That GitHub account uses a different email from the one invited. Use a GitHub account with the invited address.'; break
-        case 'user_exists': ret = 'An account already uses this email. Sign in with it instead.'; break
+        case 'no_user': ret = 'No account signs in with that identity. Create one first.'; break
+        case 'multiple_organizations': ret = 'Your account belongs to several organizations, but the choice expired. Please sign in again.'; break
+        case 'user_exists': ret = 'An account already exists for that email or identity. Sign in instead.'; break
+        case 'user_pending': ret = 'You were invited to an organization. Accept the invitation emailed to you first.'; break
+        case 'user_disabled': ret = 'This account cannot sign in to the organization.'; break
+        case 'email_mismatch': ret = 'That account uses a different email from the one invited. Use an account with the invited address.'; break
         case 'invite_invalid': ret = 'This invitation is no longer valid. Ask whoever invited you for a new one.'; break
         case 'config_not_found': ret = 'That sign-in method is not offered for this invitation.'; break
         case 'email_not_verified': ret = 'Your provider has not verified your email address.'; break

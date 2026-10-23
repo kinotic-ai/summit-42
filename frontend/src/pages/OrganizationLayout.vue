@@ -1,12 +1,12 @@
 <template>
-  <div class="shell photo-bg workspace">
+  <div class="shell photo-bg organization">
     <TopBar has-nav @toggle-nav="navOpen = !navOpen" />
     <div class="shell__body">
-      <SideNav label="Workspace" :items="NAV_ITEMS" :open="navOpen" @close="navOpen = false">
+      <SideNav label="Organization" :items="NAV_ITEMS" :open="navOpen" @close="navOpen = false">
         <template #header>
-          <div class="sidenav__wide workspace__label">
-            <p class="workspace__eyebrow">Workspace</p>
-            <p class="workspace__id">{{ SESSION.organizationId }}</p>
+          <div class="sidenav__wide organization__label">
+            <p class="organization__eyebrow">Organization</p>
+            <p class="organization__id">{{ SESSION.organizationId }}</p>
           </div>
         </template>
       </SideNav>
@@ -21,7 +21,7 @@ import SideNav, { type SideNavItem } from '@/components/SideNav.vue'
 import TopBar from '@/components/TopBar.vue'
 import { SESSION } from '@/api/session'
 
-/** The pages about the whole workspace: its apps, its members and its settings. */
+/** The pages about the whole organization: its apps, its members and its settings. */
 const NAV_ITEMS: SideNavItem[] = [
   { label: 'Apps', to: '/', icon: 'apps' },
   { label: 'Members', to: '/members', icon: 'members' },
@@ -32,15 +32,15 @@ const navOpen = ref(false)
 </script>
 
 <style scoped>
-.workspace {
+.organization {
   --photo-x: 72%;
 }
 
-.workspace__label {
+.organization__label {
   padding: 0.25rem 0.75rem 1rem;
 }
 
-.workspace__eyebrow {
+.organization__eyebrow {
   margin: 0;
   font-size: 0.72rem;
   font-weight: 600;
@@ -49,7 +49,7 @@ const navOpen = ref(false)
   color: var(--text-subtle);
 }
 
-.workspace__id {
+.organization__id {
   margin: 0.15rem 0 0;
   overflow: hidden;
   text-overflow: ellipsis;

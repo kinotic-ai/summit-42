@@ -14,15 +14,7 @@
 
       <span class="stage__spacer" />
 
-      <div v-if="activity" class="status glass" aria-live="polite">
-        <span class="status__spinner"><span class="spinner" /></span>
-        <span class="status__text">
-          <span class="status__title">{{ activity }}</span>
-          <span class="muted">{{ app.url ? 'Your app keeps running until the new version is live.' : `Your link appears here as soon as ${app.name} is live.` }}</span>
-        </span>
-      </div>
-
-      <section v-else-if="app.url" class="status status--live glass">
+      <section v-if="app.url" class="status glass">
         <p class="status__eyebrow">Your app is live</p>
         <a :href="app.url" target="_blank" rel="noopener" class="status__url">{{ hostOf(app.url) }}</a>
         <div class="status__actions">
@@ -38,7 +30,7 @@
              :key="app.applicationId"
              class="build__chat"
              :app="app"
-             @activity="activity = $event"
+             @working="working = $event"
              @deployed="markDeployed(app.applicationId, $event)"
              @close="chatOpen = false" />
   </div>
@@ -51,18 +43,18 @@ import AppIcon from '@/components/AppIcon.vue'
 import { markDeployed, type BuilderApp } from '@/api/appBuilder'
 import { copyText, hostOf } from '@/api/format'
 
-/** Building an app: the chat in a drawer on the right, and what is happening to the app over the photo. */
+/** Building an app: the chat in a drawer on the right, where the build's progress shows, and the app's link over the photo. */
 const props = defineProps<{
   app: BuilderApp
 }>()
 
 const chatOpen = ref(true)
-const activity = ref<string | null>(null)
+const working = ref(false)
 const copied = ref(false)
 
 const chip = computed(() => {
   let ret: { text: string; class: string }
-  if (activity.value) {
+  if (working.value) {
     ret = { text: props.app.url ? 'Updating' : 'Building', class: 'chip--working' }
   } else if (props.app.url) {
     ret = { text: 'Live', class: 'chip--live' }
@@ -117,35 +109,9 @@ async function copyLink() {
 }
 
 .status {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
   max-width: 32.5rem;
-  padding: 1rem 1.25rem;
-  box-shadow: var(--shadow);
-}
-
-.status__spinner {
-  display: inline-flex;
-  color: var(--accent-link);
-  font-size: 1.25rem;
-}
-
-.status__text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  font-size: 0.875rem;
-}
-
-.status__title {
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
-.status--live {
-  display: block;
   padding: 1.1rem 1.25rem;
+  box-shadow: var(--shadow);
 }
 
 .status__eyebrow {

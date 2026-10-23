@@ -1,13 +1,13 @@
 import { reactive } from 'vue'
 import { Kinotic, type IParticipant } from '@kinotic-ai/core'
-import { hasSession, logout } from '@/api/auth'
+import { hasSession, logout, rememberOrganization } from '@/api/auth'
 import { KINOTIC_SERVER } from '@/api/server'
 
 /** The signed-in state every page reads. */
 export const SESSION = reactive({
     /** True while the STOMP connection, authenticated by the session cookie, is open. */
     connected: false,
-    /** The organization (workspace) the session is signed in to, once connected. */
+    /** The organization the session is signed in to, once connected. */
     organizationId: null as string | null,
     /** The signed-in user's name, or their email when they gave none, once connected. */
     displayName: null as string | null,
@@ -37,7 +37,7 @@ function serialize<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Opens the realtime connection with the session a REST login established, and learns the workspace from the
+ * Opens the realtime connection with the session a REST login established, and learns the organization from the
  * participant the gateway issues. Resolves false when the browser has no session; rejects when the gateway cannot
  * be reached.
  */
@@ -49,6 +49,9 @@ export function connect(): Promise<boolean> {
         } else if (await hasSession()) {
             const connectedInfo = await Kinotic.connect({ server: KINOTIC_SERVER, maxConnectionAttempts: MAX_CONNECTION_ATTEMPTS })
             SESSION.organizationId = organizationIdOf(connectedInfo.participant)
+            if (SESSION.organizationId) {
+                rememberOrganization(SESSION.organizationId)
+            }
             SESSION.displayName = connectedInfo.participant?.metadata?.displayName ?? null
             SESSION.email = connectedInfo.participant?.metadata?.email ?? null
             SESSION.connected = true

@@ -36,6 +36,7 @@ import org.kinotic.system.api.model.llm.LlmConfiguration;
 import org.kinotic.system.api.model.llm.LlmProviderType;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.Duration;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -236,6 +237,40 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         String system = systemOf(anthropic.requests().getFirst());
         Assertions.assertTrue(system.contains("The user named this app 'Todo' and described it as: Tracks my chores."), system);
         Assertions.assertEquals(List.of("Build a todo app"), textsOf(anthropic.requests().getFirst()));
+    }
+
+    @Test
+    public void testChatReportsEachToolCallAsAStepBetweenTheParagraphsOfTheReply() throws Exception {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        anthropic.replyWithTextAndToolCall("Let me read the skill first.", "readSkill", new JsonObject().put("skill", "frontend"));
+        anthropic.replyWithTextAndToolCall("Now its Vite notes.", "readSkill",
+                                           new JsonObject().put("skill", "frontend").put("file", "references/vite.md"));
+        anthropic.replyWithText("Your todo app ", "is ready");
+
+        List<BuildEvent> events = chat("todo", "Build a todo app");
+        Conversation conversation = await(callAs(participant, service -> service.findConversation("todo")));
+
+        Assertions.assertEquals(List.of("TEXT Let me read the skill first.",
+                                        "PROGRESS Reading the frontend skill",
+                                        "TEXT Now its Vite notes.",
+                                        "PROGRESS Reading references/vite.md of the frontend skill",
+                                        "TEXT Your todo app ",
+                                        "TEXT is ready"),
+                                events.stream().map(event -> event.getType() + " " + event.getText()).toList());
+        Assertions.assertEquals("Let me read the skill first.\n\nNow its Vite notes.\n\nYour todo app is ready",
+                                conversation.getMessages().getLast().getText());
+    }
+
+    @Test
+    public void testChatWaitsForAReplyThatStreamsForMoreThanAMinute() {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        // the providers' clients end a call after 60 seconds unless told otherwise
+        anthropic.replyWithTextAfterPause("Writing your files", Duration.ofSeconds(65), ", done");
+
+        List<BuildEvent> events = chatAs(participant, "todo", "Build a todo app").collectList().block(Duration.ofSeconds(100));
+
+        Assertions.assertEquals(List.of("Writing your files", ", done"),
+                                events.stream().map(BuildEvent::getText).toList());
     }
 
     @Test
