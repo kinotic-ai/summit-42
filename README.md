@@ -1,8 +1,14 @@
 # Summit 42
 
-Summit 42 is a chat-only app builder. People sign up, create and name as many apps as they like, and describe each
-one in a chat; Claude builds it as a regular Kinotic application, commits it to the app's GitHub repository and
-deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, and never needs Kinotic's own UIs.
+Summit 42 is a naive clone of [Base 44](https://base44.com), built by extending
+[Kinotic OS](https://github.com/kinotic-ai/kinotic). It is a chat-only app builder: people sign up, create and name as
+many apps as they like, and describe each one in a chat; Claude builds it as a regular Kinotic application, commits it
+to the app's GitHub repository and deploys it on Kinotic. Each person who signs up becomes a Kinotic organization, and
+never needs Kinotic's own UIs.
+
+Summit 42 shows what can be built on Kinotic. It runs Kinotic's own modules in process and uses Kinotic's services for
+everything an app needs (organizations, sign-in, invitations, GitHub repositories, deployments, data), so its own code
+is the chat, the tools Claude builds with, and the UI.
 
 ## Layout
 
@@ -95,3 +101,8 @@ Run the container beside the Kinotic servers, whose management server is configu
 - the management server's Elasticsearch, secret storage, email, platform secrets and GitHub App settings, and `SUMMIT42_UIBASEURL`, as [Kinotic configuration](#kinotic-configuration) lists;
 - port 8080 published as `https://dev-summit42.kinotic.ai` on the development server;
 - the UI built with `VITE_KINOTIC_HOST=dev-api.kinotic.ai`, `VITE_KINOTIC_PORT=443` and `VITE_KINOTIC_USE_SSL=true`, as the CI variables above do.
+
+## License
+
+Summit 42 is licensed under the [Elastic License 2.0](LICENSE.md). Kinotic OS and the other components it depends on
+are licensed under their own licenses.
