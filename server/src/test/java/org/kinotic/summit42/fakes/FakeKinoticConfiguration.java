@@ -30,7 +30,7 @@ import static org.mockito.Mockito.withSettings;
  * Stands in for the Kinotic modules Summit 42 runs in process, which the test profile leaves out: fakes of the Kinotic
  * services it calls, Elasticsearch in a container, a fake of the system server's LLM configurations published on
  * Summit 42's own node, a fake of Anthropic's API for those configurations to point at, and a fake of GitHub serving
- * Kinotic's Claude plugin.
+ * Kinotic's agent plugin.
  */
 @TestConfiguration
 public class FakeKinoticConfiguration {
@@ -101,7 +101,7 @@ public class FakeKinoticConfiguration {
     }
 
     /**
-     * Serves Kinotic's Claude plugin, and points Summit 42 at it before the first chat turn reads its skills.
+     * Serves Kinotic's agent plugin, and points Summit 42 at it before the first chat turn reads its skills.
      */
     @Bean
     public FakeGitHub fakeGitHub(Vertx vertx, Summit42Properties properties) {

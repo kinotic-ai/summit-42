@@ -14,7 +14,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 /**
- * Answers the GitHub API calls that read Kinotic's Claude plugin on a local port, for one repository whose ref
+ * Answers the GitHub API calls that read Kinotic's agent plugin on a local port, for one repository whose ref
  * {@link #REF} names {@link #PLUGIN_COMMIT}, and refuses every call while a test makes it fail.
  */
 public class FakeGitHub implements AutoCloseable {
@@ -29,7 +29,7 @@ public class FakeGitHub implements AutoCloseable {
      * leaves out for having no description.
      */
     public static final Map<String, String> PLUGIN_FILES = Map.of(
-            "README.md", "# Kinotic Claude plugin",
+            "README.md", "# Kinotic agent plugin",
             "skills/frontend/SKILL.md", """
                     ---
                     name: frontend
@@ -57,7 +57,7 @@ public class FakeGitHub implements AutoCloseable {
                     ---
                     # Creating an app""",
             "skills/notes/SKILL.md", "# Notes without frontmatter");
-    private static final String REPOSITORY_PATH = "/repos/kinotic-ai/claude-plugin";
+    private static final String REPOSITORY_PATH = "/repos/kinotic-ai/agent-plugin";
 
     private final HttpServer server;
     private final byte[] zipball = zip(PLUGIN_COMMIT, PLUGIN_FILES);
@@ -113,7 +113,7 @@ public class FakeGitHub implements AutoCloseable {
     private static byte[] zip(String commit, Map<String, String> files) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (ZipOutputStream out = new ZipOutputStream(bytes)) {
-            String root = "kinotic-ai-claude-plugin-" + commit + "/";
+            String root = "kinotic-ai-agent-plugin-" + commit + "/";
             out.putNextEntry(new ZipEntry(root));
             out.closeEntry();
             for (Map.Entry<String, String> file : files.entrySet()) {

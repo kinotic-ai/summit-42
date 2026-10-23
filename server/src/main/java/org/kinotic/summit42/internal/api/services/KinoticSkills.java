@@ -28,7 +28,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
- * The skills of Kinotic's Claude plugin, which teach Claude to build Kinotic apps, read from the plugin's GitHub
+ * The skills of Kinotic's agent plugin, which teach Claude to build Kinotic apps, read from the plugin's GitHub
  * repository at {@link Summit42Properties#getKinoticPluginRepositoryUrl()} and kept up to date with the branch or tag
  * {@link Summit42Properties#getKinoticPluginRef()} as it moves.
  */

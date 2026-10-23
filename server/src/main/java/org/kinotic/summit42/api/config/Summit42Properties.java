@@ -35,10 +35,10 @@ public class Summit42Properties {
     private String uiBaseUrl;
 
     /**
-     * The GitHub API URL of the repository of Kinotic's Claude plugin, whose skills teach Claude to build Kinotic apps.
+     * The GitHub API URL of the repository of Kinotic's agent plugin, whose skills teach Claude to build Kinotic apps.
      */
     @NotBlank
-    private String kinoticPluginRepositoryUrl = "https://api.github.com/repos/kinotic-ai/claude-plugin";
+    private String kinoticPluginRepositoryUrl = "https://api.github.com/repos/kinotic-ai/agent-plugin";
 
     /**
      * The branch or tag of {@link #kinoticPluginRepositoryUrl} the skills are read from. The server follows it as it

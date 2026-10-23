@@ -3,7 +3,7 @@ package org.kinotic.summit42.internal.api.services;
 import java.util.SortedMap;
 
 /**
- * A skill of Kinotic's Claude plugin, which teaches Claude how to build one part of a Kinotic app.
+ * A skill of Kinotic's agent plugin, which teaches Claude how to build one part of a Kinotic app.
  *
  * @param name        the skill's name, such as frontend
  * @param description what the skill covers and when to read it

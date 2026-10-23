@@ -7,7 +7,7 @@ import java.util.SortedMap;
 import java.util.stream.Collectors;
 
 /**
- * The skills of one revision of Kinotic's Claude plugin.
+ * The skills of one revision of Kinotic's agent plugin.
  *
  * @param version the plugin's commit the skills were read at
  * @param skills  the skills by name
