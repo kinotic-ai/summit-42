@@ -4,6 +4,11 @@ import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerRequest;
+import io.vertx.core.http.RequestOptions;
+import io.vertx.ext.web.client.WebClient;
+import io.vertx.ext.web.client.impl.ClientPhase;
+import io.vertx.ext.web.client.impl.HttpContext;
+import io.vertx.ext.web.client.impl.WebClientInternal;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -14,8 +19,9 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 /**
- * Answers the GitHub API calls that read Kinotic's agent plugin on a local port, for one repository whose ref
- * {@link #REF} names {@link #PLUGIN_COMMIT}, and refuses every call while a test makes it fail.
+ * Answers the GitHub API calls of Summit 42's {@link WebClient} that read Kinotic's agent plugin on a local port, for
+ * the plugin's ref {@link #REF}, which names {@link #PLUGIN_COMMIT}, and refuses every call while a test makes it
+ * fail.
  */
 public class FakeGitHub implements AutoCloseable {
 
@@ -57,26 +63,24 @@ public class FakeGitHub implements AutoCloseable {
                     ---
                     # Creating an app""",
             "skills/notes/SKILL.md", "# Notes without frontmatter");
+    private static final String API_HOST = "api.github.com";
     private static final String REPOSITORY_PATH = "/repos/kinotic-ai/agent-plugin";
 
     private final HttpServer server;
     private final byte[] zipball = zip(PLUGIN_COMMIT, PLUGIN_FILES);
     private volatile boolean failing;
 
-    public FakeGitHub(Vertx vertx) {
+    /**
+     * Starts the server and sends the client's calls to GitHub's API to it.
+     */
+    public FakeGitHub(Vertx vertx, WebClient webClient) {
         server = vertx.createHttpServer()
                       .requestHandler(this::answer)
                       .listen(0)
                       .toCompletionStage()
                       .toCompletableFuture()
                       .join();
-    }
-
-    /**
-     * @return the GitHub API URL of the plugin's repository
-     */
-    public String repositoryUrl() {
-        return "http://127.0.0.1:" + server.actualPort() + REPOSITORY_PATH;
+        ((WebClientInternal) webClient).addInterceptor(this::reroute);
     }
 
     /**
@@ -89,6 +93,15 @@ public class FakeGitHub implements AutoCloseable {
     @Override
     public void close() {
         server.close();
+    }
+
+    // an interceptor runs in every phase of a call and must pass each one on with next()
+    private void reroute(HttpContext<?> context) {
+        RequestOptions options = context.requestOptions();
+        if (context.phase() == ClientPhase.CREATE_REQUEST && API_HOST.equals(options.getHost())) {
+            options.setHost("127.0.0.1").setPort(server.actualPort()).setSsl(false);
+        }
+        context.next();
     }
 
     private void answer(HttpServerRequest request) {

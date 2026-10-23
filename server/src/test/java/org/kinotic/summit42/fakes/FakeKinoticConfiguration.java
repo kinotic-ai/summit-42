@@ -5,13 +5,13 @@ import co.elastic.clients.json.jackson.Jackson3JsonpMapper;
 import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
 import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
 import io.vertx.core.Vertx;
+import io.vertx.ext.web.client.WebClient;
 import org.apache.hc.core5.http.HttpHost;
 import org.kinotic.core.api.event.ZonePartitioningService;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.domain.api.services.security.SignUpService;
 import org.kinotic.domain.api.utils.DomainUtil;
 import org.kinotic.management.api.services.github.ProjectRepoCredentialService;
-import org.kinotic.summit42.api.config.Summit42Properties;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -100,14 +100,9 @@ public class FakeKinoticConfiguration {
         return new FakeAnthropic(vertx);
     }
 
-    /**
-     * Serves Kinotic's agent plugin, and points Summit 42 at it before the first chat turn reads its skills.
-     */
     @Bean
-    public FakeGitHub fakeGitHub(Vertx vertx, Summit42Properties properties) {
-        FakeGitHub ret = new FakeGitHub(vertx);
-        properties.setKinoticPluginRepositoryUrl(ret.repositoryUrl());
-        return ret;
+    public FakeGitHub fakeGitHub(Vertx vertx, WebClient webClient) {
+        return new FakeGitHub(vertx, webClient);
     }
 
     // the fakes are abstract implementations of the Kinotic interfaces, and the methods they leave out answer defaults

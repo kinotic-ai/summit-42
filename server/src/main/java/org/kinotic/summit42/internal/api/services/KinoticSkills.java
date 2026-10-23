@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Validate;
-import org.kinotic.summit42.api.config.Summit42Properties;
 import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -29,14 +28,15 @@ import java.util.zip.ZipInputStream;
 
 /**
  * The skills of Kinotic's agent plugin, which teach Claude to build Kinotic apps, read from the plugin's GitHub
- * repository at {@link Summit42Properties#getKinoticPluginRepositoryUrl()} and kept up to date with the branch or tag
- * {@link Summit42Properties#getKinoticPluginRef()} as it moves.
+ * repository and kept up to date with its main branch as it moves.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class KinoticSkills {
 
+    private static final String PLUGIN_REPOSITORY_URL = "https://api.github.com/repos/kinotic-ai/agent-plugin";
+    private static final String PLUGIN_REF = "main";
     // how long the skills are used before the plugin's ref is checked for a new commit again
     private static final Duration CHECK_INTERVAL = Duration.ofMinutes(5);
     private static final String UNAVAILABLE = "Summit 42 could not load Kinotic's skills from GitHub. Please try again"
@@ -49,7 +49,6 @@ public class KinoticSkills {
     private static final String API_VERSION = "2022-11-28";
 
     private final WebClient webClient;
-    private final Summit42Properties properties;
 
     // guarded by this
     private SkillSet current;
@@ -93,8 +92,7 @@ public class KinoticSkills {
                     checkedAt = System.nanoTime();
                 }
                 if (result.failed()) {
-                    log.warn("Kinotic's skills could not be read from {}", properties.getKinoticPluginRepositoryUrl(),
-                             result.cause());
+                    log.warn("Kinotic's skills could not be read from {}", PLUGIN_REPOSITORY_URL, result.cause());
                 }
             });
         }
@@ -103,8 +101,7 @@ public class KinoticSkills {
 
     // the skills of the commit the ref names now; a 304 means the ref still names the commit of the current skills
     private Future<SkillSet> fetch() {
-        String ref = properties.getKinoticPluginRef();
-        HttpRequest<Buffer> request = request("/commits/" + ref).putHeader("Accept", "application/vnd.github.sha");
+        HttpRequest<Buffer> request = request("/commits/" + PLUGIN_REF).putHeader("Accept", "application/vnd.github.sha");
         String etag = currentEtag();
         if (etag != null) {
             request.putHeader("If-None-Match", etag);
@@ -114,7 +111,7 @@ public class KinoticSkills {
             if (resp.statusCode() == 304) {
                 ret = Future.succeededFuture(currentSkills());
             } else if (resp.statusCode() != 200) {
-                ret = Future.failedFuture(refused("read the plugin's " + ref, resp));
+                ret = Future.failedFuture(refused("read the plugin's " + PLUGIN_REF, resp));
             } else {
                 String commit = resp.bodyAsString().strip();
                 SkillSet known = currentSkills();
@@ -200,7 +197,7 @@ public class KinoticSkills {
     }
 
     private HttpRequest<Buffer> request(String path) {
-        return webClient.getAbs(properties.getKinoticPluginRepositoryUrl() + path)
+        return webClient.getAbs(PLUGIN_REPOSITORY_URL + path)
                         .putHeader(API_VERSION_HEADER, API_VERSION);
     }
 
