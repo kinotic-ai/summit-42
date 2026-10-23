@@ -4,7 +4,7 @@ import type { OrganizationMember, PendingInviteSummary } from '@kinotic-ai/manag
 const SERVICE_IDENTIFIER = 'management-api~org.kinotic.summit42.api.services.InvitationService'
 
 /**
- * The invitations the signed-in user sends into their workspace and its apps, in their name, with emails whose
+ * The invitations the signed-in user sends into their organization and its apps, in their name, with emails whose
  * links open this UI.
  */
 export class InvitationService {
@@ -15,7 +15,7 @@ export class InvitationService {
         this.serviceProxy = kinotic.serviceProxy(SERVICE_IDENTIFIER)
     }
 
-    /** Adds a person to the workspace and emails them an invitation; they are listed as pending until they join. */
+    /** Adds a person to the organization and emails them an invitation; they are listed as pending until they join. */
     public addMember(email: string, displayName: string | null): Promise<OrganizationMember> {
         return this.serviceProxy.invoke('addMember', [email, displayName])
     }
@@ -25,7 +25,7 @@ export class InvitationService {
         return this.serviceProxy.invoke('sendInvitation', [email])
     }
 
-    /** Invites someone into one of the workspace's apps by email. */
+    /** Invites someone into one of the organization's apps by email. */
     public inviteMember(email: string, displayName: string | null, applicationId: string): Promise<PendingInviteSummary> {
         return this.serviceProxy.invoke('inviteMember', [email, displayName, applicationId])
     }

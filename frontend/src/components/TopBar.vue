@@ -6,7 +6,7 @@
     <RouterLink to="/" class="topbar__brand"><BrandMark /></RouterLink>
     <template v-if="SESSION.organizationId">
       <span class="topbar__sep topbar__crumb" aria-hidden="true">/</span>
-      <RouterLink to="/" class="topbar__workspace topbar__crumb">{{ SESSION.organizationId }}</RouterLink>
+      <RouterLink to="/" class="topbar__organization topbar__crumb">{{ SESSION.organizationId }}</RouterLink>
     </template>
     <template v-if="appName">
       <span class="topbar__sep" aria-hidden="true">/</span>
@@ -24,7 +24,7 @@
       </button>
       <div v-if="menuOpen" class="account__menu glass" role="menu">
         <div v-if="SESSION.displayName" class="account__name">{{ SESSION.displayName }}</div>
-        <div v-if="SESSION.organizationId" class="account__workspace muted">{{ SESSION.organizationId }}</div>
+        <div v-if="SESSION.organizationId" class="account__organization muted">{{ SESSION.organizationId }}</div>
         <button type="button" class="btn btn--ghost account__item" role="menuitem" @click="handleSignOut">Sign out</button>
       </div>
     </div>
@@ -41,7 +41,7 @@ import { SESSION, signOut } from '@/api/session'
 
 /** The bar across the top of every signed-in page: the brand, where the page is, and the account menu. */
 defineProps<{
-  /** The open app's name, shown after the workspace. */
+  /** The open app's name, shown after the organization. */
   appName?: string
   /** True when the page has a sidebar, which the menu button opens on a phone. */
   hasNav?: boolean
@@ -105,7 +105,7 @@ async function handleSignOut() {
   color: #3e5266;
 }
 
-.topbar__workspace {
+.topbar__organization {
   overflow: hidden;
   max-width: 14rem;
   text-overflow: ellipsis;
@@ -114,7 +114,7 @@ async function handleSignOut() {
   color: var(--text-muted);
 }
 
-.topbar__workspace:hover {
+.topbar__organization:hover {
   color: var(--text);
 }
 
@@ -166,7 +166,7 @@ async function handleSignOut() {
   overflow-wrap: anywhere;
 }
 
-.account__workspace {
+.account__organization {
   padding: 0 0.6rem 0.5rem;
   font-size: 0.85rem;
   overflow-wrap: anywhere;

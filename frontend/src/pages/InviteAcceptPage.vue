@@ -9,17 +9,17 @@
     </div>
 
     <template v-else-if="invite">
-      <!-- a workspace member builds in the workspace's GitHub, so a workspace invitation is accepted with GitHub -->
       <template v-if="!invite.applicationId">
-        <ProviderButton v-if="inviteGitHub"
-                        :action="inviteProviderUrl(inviteGitHub.id, token!)"
-                        :provider="GITHUB_PROVIDER"
-                        label="GitHub"
+        <ProviderButton v-for="provider in invite.providers"
+                        :key="provider.id"
+                        :action="inviteProviderUrl(provider.id, token!)"
+                        :provider="provider.provider"
+                        :label="provider.name || providerDisplayName(provider.provider)"
                         verb="Accept" />
-        <p v-else class="muted">Accepting with GitHub is not available right now. Please try again later.</p>
+        <div v-if="invite.providers.length > 0 && passwordAccepts" class="divider">or</div>
       </template>
 
-      <form v-else-if="passwordAccepts" @submit.prevent="accept">
+      <form v-if="passwordAccepts" @submit.prevent="accept">
         <div class="field">
           <label for="email">Email</label>
           <input id="email" class="input" type="email" :value="invite.email" readonly />
@@ -68,9 +68,9 @@ import {
   acceptInvite,
   authErrorMessage,
   fetchInvite,
-  GITHUB_PROVIDER,
   type InviteDetails,
   inviteProviderUrl,
+  providerDisplayName,
 } from '@/api/auth'
 
 const route = useRoute()
@@ -87,12 +87,12 @@ const password = ref('')
 const confirm = ref('')
 
 const title = computed(() => {
-  const workspace = invite.value?.organizationName
+  const organization = invite.value?.organizationName
   let ret = 'Your invitation'
   if (invite.value?.applicationId) {
-    ret = workspace ? `Join an app from ${workspace}` : 'Join an app'
-  } else if (workspace) {
-    ret = `Join ${workspace}`
+    ret = organization ? `Join an app from ${organization}` : 'Join an app'
+  } else if (organization) {
+    ret = `Join ${organization}`
   }
   return ret
 })
@@ -107,9 +107,7 @@ const subtitle = computed(() => {
   return ret
 })
 
-const inviteGitHub = computed(() => invite.value?.providers.find(provider => provider.provider === GITHUB_PROVIDER) ?? null)
-
-// an app invitation is accepted with a password: the existing account's password accepts; an account that only signs in through a provider accepts through it
+// the existing account's password accepts; an account that only signs in through a provider accepts through it
 const existingPassword = computed(() => !!invite.value?.organizationUserExists && invite.value.organizationUserHasPassword)
 const passwordAccepts = computed(() => !invite.value?.organizationUserExists || existingPassword.value)
 

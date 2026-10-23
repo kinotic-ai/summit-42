@@ -14,11 +14,11 @@ const router = createRouter({
     routes: [
         {
             path: '/',
-            component: () => import('@/pages/WorkspaceLayout.vue'),
+            component: () => import('@/pages/OrganizationLayout.vue'),
             children: [
                 { path: '', component: () => import('@/pages/AppsPage.vue') },
                 { path: 'members', component: () => import('@/pages/MembersPage.vue') },
-                { path: 'settings', component: () => import('@/pages/WorkspaceSettingsPage.vue') },
+                { path: 'settings', component: () => import('@/pages/OrganizationSettingsPage.vue') },
             ],
         },
         {
@@ -35,6 +35,7 @@ const router = createRouter({
         },
         { path: GITHUB_CALLBACK_PATH, component: () => import('@/pages/GitHubCallbackPage.vue') },
         { path: '/login', component: () => import('@/pages/LoginPage.vue'), meta: { public: true } },
+        { path: '/login/:organizationId', component: () => import('@/pages/OrganizationLoginPage.vue'), props: true, meta: { public: true } },
         { path: '/signup', component: () => import('@/pages/SignupPage.vue'), meta: { public: true } },
         { path: '/register', component: () => import('@/pages/RegisterPage.vue'), meta: { public: true } },
         { path: '/invite/accept', component: () => import('@/pages/InviteAcceptPage.vue'), meta: { public: true } },

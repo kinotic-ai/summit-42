@@ -14,7 +14,7 @@ import { Kinotic } from '@kinotic-ai/core'
 
 /**
  * Where GitHub's install returns, through Kinotic, with installation_id, state and code in the query: finishes the
- * workspace's GitHub link and opens the workspace.
+ * organization's GitHub link and opens the organization.
  */
 const route = useRoute()
 const router = useRouter()

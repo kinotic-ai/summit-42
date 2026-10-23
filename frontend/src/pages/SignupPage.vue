@@ -1,12 +1,12 @@
 <template>
-  <AuthShell title="Create your account" subtitle="Your apps live in a workspace of your own.">
+  <AuthShell title="Create your account" subtitle="Your apps live in an organization of your own.">
     <template #hero>
       <HeroPitch />
     </template>
 
     <div v-if="error" class="alert alert--error" role="alert">{{ error }}</div>
 
-    <!-- each workspace builds its apps in its own GitHub account, so sign-up goes through GitHub -->
+    <!-- each organization builds its apps in its own GitHub account, so sign-up goes through GitHub -->
     <ProviderButton v-if="offered"
                     :action="socialSignupUrl(GITHUB_PROVIDER)"
                     :provider="GITHUB_PROVIDER"

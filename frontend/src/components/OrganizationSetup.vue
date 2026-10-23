@@ -1,13 +1,13 @@
 <template>
-  <AuthShell title="Name your workspace" :subtitle="subtitle">
+  <AuthShell title="Name your organization" :subtitle="subtitle">
     <div v-if="error" class="alert alert--error" role="alert">{{ error }}</div>
 
     <template v-if="token">
       <form @submit.prevent="submit">
         <div class="field">
-          <label for="workspace-name">Workspace name</label>
-          <input id="workspace-name"
-                 v-model="workspaceName"
+          <label for="organization-name">Organization name</label>
+          <input id="organization-name"
+                 v-model="organizationName"
                  class="input"
                  placeholder="e.g. Jane's apps"
                  autocomplete="organization"
@@ -40,28 +40,28 @@ import AuthShell from '@/components/AuthShell.vue'
 import { connect } from '@/api/session'
 
 /**
- * The last step of a sign-up, reached from the link the gateway sent: names the workspace (the organization) and
+ * The last step of a sign-up, reached from the link the gateway sent: names the organization and
  * calls `create` with the sign-up token and that name. Once it resolves the session exists, so the page
- * connects and opens the workspace.
+ * connects and opens the organization.
  */
 const props = defineProps<{
   subtitle: string
   initialName?: string
-  create: (token: string, workspaceName: string) => Promise<void>
+  create: (token: string, organizationName: string) => Promise<void>
 }>()
 
 const route = useRoute()
 const router = useRouter()
 
 const token = computed(() => typeof route.query.token === 'string' ? route.query.token : '')
-const workspaceName = ref(props.initialName ?? '')
+const organizationName = ref(props.initialName ?? '')
 const creating = ref(false)
 const error = ref<string | null>(null)
 
 async function submit() {
-  const name = workspaceName.value.trim()
+  const name = organizationName.value.trim()
   if (!name) {
-    error.value = 'Name your workspace.'
+    error.value = 'Name your organization.'
     return
   }
   creating.value = true
@@ -71,10 +71,10 @@ async function submit() {
     if (await connect()) {
       await router.replace('/')
     } else {
-      error.value = 'Your workspace was created, but this browser did not keep the session. Sign in to continue.'
+      error.value = 'Your organization was created, but this browser did not keep the session. Sign in to continue.'
     }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Could not create your workspace'
+    error.value = err instanceof Error ? err.message : 'Could not create your organization'
   } finally {
     creating.value = false
   }

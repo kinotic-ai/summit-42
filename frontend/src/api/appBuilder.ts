@@ -24,7 +24,7 @@ export interface ChatMessage {
     text: string
 }
 
-/** An app of the workspace: a Kinotic application the user named, and the url of its UI once deployed. */
+/** An app of the organization: a Kinotic application the user named, and the url of its UI once deployed. */
 export interface BuilderApp {
     applicationId: string
     name: string
@@ -39,7 +39,7 @@ export interface Conversation {
 
 const SERVICE_IDENTIFIER = 'management-api~org.kinotic.summit42.api.services.AppBuilderService'
 
-/** The Summit 42 app builder the signed-in workspace creates its apps with and chats with about each one. */
+/** The Summit 42 app builder the signed-in organization creates its apps with and chats with about each one. */
 export class AppBuilderService {
 
     private readonly serviceProxy: IServiceProxy
@@ -48,12 +48,12 @@ export class AppBuilderService {
         this.serviceProxy = kinotic.serviceProxy(SERVICE_IDENTIFIER)
     }
 
-    /** The workspace's apps, ordered by name. */
+    /** The organization's apps, ordered by name. */
     public findApps(): Promise<BuilderApp[]> {
         return this.serviceProxy.invoke('findApps')
     }
 
-    /** Creates an app with its GitHub repository; rejects when the workspace already has an app with that name. */
+    /** Creates an app with its GitHub repository; rejects when the organization already has an app with that name. */
     public createApp(name: string, description: string | null): Promise<BuilderApp> {
         return this.serviceProxy.invoke('createApp', [name, description])
     }
@@ -79,20 +79,20 @@ export class AppBuilderService {
 
 export const APP_BUILDER = new AppBuilderService(Kinotic)
 
-/** The workspace's apps every page reads, ordered by name; {@link loadApps} fills it. */
+/** The organization's apps every page reads, ordered by name; {@link loadApps} fills it. */
 export const APPS = reactive({
     list: [] as BuilderApp[],
-    /** The workspace the list was loaded for, or null before the first load. */
+    /** The organization the list was loaded for, or null before the first load. */
     organizationId: null as string | null,
 })
 
-/** Loads the signed-in workspace's apps into {@link APPS}. */
+/** Loads the signed-in organization's apps into {@link APPS}. */
 export async function loadApps(): Promise<void> {
     APPS.list = await APP_BUILDER.findApps()
     APPS.organizationId = SESSION.organizationId
 }
 
-/** Loads the signed-in workspace's apps into {@link APPS} unless they are loaded already. */
+/** Loads the signed-in organization's apps into {@link APPS} unless they are loaded already. */
 export async function ensureAppsLoaded(): Promise<void> {
     if (APPS.organizationId === null || APPS.organizationId !== SESSION.organizationId) {
         await loadApps()

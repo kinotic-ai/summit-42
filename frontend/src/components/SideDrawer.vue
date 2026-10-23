@@ -44,7 +44,7 @@ function closeOnEscape(event: KeyboardEvent) {
 
 onMounted(() => {
   document.addEventListener('keydown', closeOnEscape)
-  panel.value?.querySelector<HTMLElement>('.drawer__body input, .drawer__body textarea, .drawer__body select')?.focus()
+  panel.value?.querySelector<HTMLElement>('.drawer__body input:not([readonly]), .drawer__body textarea, .drawer__body select')?.focus()
 })
 
 onBeforeUnmount(() => document.removeEventListener('keydown', closeOnEscape))
