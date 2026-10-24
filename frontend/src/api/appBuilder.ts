@@ -6,8 +6,11 @@ import { SESSION } from '@/api/session'
 /** What one event of a chat turn carries. */
 export type BuildEventType = 'TEXT' | 'PROGRESS' | 'APP_READY' | 'USER_MESSAGE' | 'ERROR'
 
-/** What a PROGRESS step does: reading the app's files, a skill or the docs; committing files; or deploying. */
-export type BuildStepType = 'READING' | 'COMMITTING' | 'DEPLOYING'
+/**
+ * What a PROGRESS step does: reading the app's files, a skill or the docs; committing files; deploying; or checking how
+ * the deployed app behaves, by reading its logs or calling its services.
+ */
+export type BuildStepType = 'READING' | 'COMMITTING' | 'DEPLOYING' | 'CHECKING'
 
 /**
  * One event of a chat turn: TEXT is a chunk of the assistant's reply to append, PROGRESS a one-line status of what

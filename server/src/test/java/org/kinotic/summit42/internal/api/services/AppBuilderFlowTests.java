@@ -7,16 +7,20 @@ import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.kinotic.core.api.ServiceRegistry;
+import org.kinotic.core.api.service.ServiceIdentifier;
 import org.kinotic.domain.api.model.Application;
 import org.kinotic.domain.api.model.ApplicationKey;
 import org.kinotic.domain.api.model.TenantManagement;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
+import org.kinotic.domain.api.utils.DomainUtil;
 import org.kinotic.management.api.model.Project;
 import org.kinotic.management.api.model.ProjectRepoToken;
 import org.kinotic.management.api.model.ProjectType;
 import org.kinotic.management.api.model.RepositoryConnectionStatus;
 import org.kinotic.management.api.model.deployment.DeploymentState;
 import org.kinotic.management.api.model.deployment.DeploymentStatusType;
+import org.kinotic.management.api.model.deployment.MicroserviceDeployment;
 import org.kinotic.management.api.model.deployment.ProjectDeployment;
 import org.kinotic.management.api.model.deployment.UiDeployment;
 import org.kinotic.management.api.services.github.ProjectRepoCredentialService;
@@ -32,7 +36,11 @@ import org.kinotic.summit42.fakes.FakeAnthropic;
 import org.kinotic.summit42.fakes.FakeApplicationService;
 import org.kinotic.summit42.fakes.FakeGitHub;
 import org.kinotic.summit42.fakes.FakeLlmConfigurationService;
+import org.kinotic.summit42.fakes.FakeLogService;
+import org.kinotic.summit42.fakes.FakeMicroserviceDeploymentService;
 import org.kinotic.summit42.fakes.FakeProjectService;
+import org.kinotic.summit42.fakes.FakeRecipeService;
+import org.kinotic.summit42.fakes.RecipeService;
 import org.kinotic.summit42.fakes.FakeUiDeploymentService;
 import org.kinotic.summit42.internal.api.repositories.BuilderSession;
 import org.kinotic.summit42.internal.api.repositories.BuilderSessionRepository;
@@ -46,6 +54,8 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -68,6 +78,14 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     private FakeProjectService projectService;
     @Autowired
     private FakeUiDeploymentService uiDeploymentService;
+    @Autowired
+    private FakeMicroserviceDeploymentService microserviceDeploymentService;
+    @Autowired
+    private FakeLogService logService;
+    @Autowired
+    private FakeRecipeService recipeService;
+    @Autowired
+    private ServiceRegistry serviceRegistry;
     @Autowired
     private FakeLlmConfigurationService llmConfigurationService;
     @Autowired
@@ -593,6 +611,103 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         Assertions.assertTrue(events.stream().noneMatch(event -> event.getType() == BuildEventType.APP_READY), events.toString());
         String toolResult = toolResultOf(anthropic.requests().getLast());
         Assertions.assertTrue(toolResult.contains("The deployment failed: vite build failed"), toolResult);
+    }
+
+    @Test
+    public void testReadAppLogsReadsTheLastHourOfEachMicroserviceOldestFirst() {
+        Project project = projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        microserviceDeploymentService.add(microservice(project, "worker", null, "exited with code 1"));
+        microserviceDeploymentService.add(microservice(project, "main", "workload-main", null));
+        Instant now = Instant.now();
+        logService.log(organizationId(), "workload-main", now.minus(Duration.ofMinutes(5)), "fetch failed: connect ECONNREFUSED");
+        logService.log(organizationId(), "workload-main", now.minus(Duration.ofMinutes(30)), "main microservice running");
+        logService.log(organizationId(), "workload-main", now.minus(Duration.ofHours(2)), "an earlier run");
+        anthropic.replyWithToolCall("readAppLogs");
+        anthropic.replyWithText("The search cannot reach the sites");
+
+        List<BuildEvent> events = chat("todo", "Why are there only two results?");
+
+        Assertions.assertTrue(events.stream().anyMatch(event -> event.getStepType() == BuildStepType.CHECKING
+                                                                && "Reading the app's logs".equals(event.getText())), events.toString());
+        DateTimeFormatter time = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneOffset.UTC);
+        Assertions.assertEquals("=== main ===\n"
+                                + time.format(now.minus(Duration.ofMinutes(30))) + " main microservice running\n"
+                                + time.format(now.minus(Duration.ofMinutes(5))) + " fetch failed: connect ECONNREFUSED\n"
+                                + "=== worker ===\n"
+                                + "Not running as it should: exited with code 1\n"
+                                + "(not started yet)\n",
+                                Json.decodeValue(toolResultOf(anthropic.requests().getLast())));
+    }
+
+    @Test
+    public void testCallAppServiceCallsTheFunctionOfTheAppsServiceAsTheUser() throws Exception {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        ServiceIdentifier recipes = publishRecipeService("todo");
+        try {
+            anthropic.replyWithToolCall("callAppService", new JsonObject().put("service", "recipeapp.RecipeService")
+                                                                          .put("function", "searchRecipes")
+                                                                          .put("arguments", "[\"enchiladas\", 3]"));
+            anthropic.replyWithText("It finds three");
+
+            List<BuildEvent> events = chat("todo", "Does the search work?");
+
+            Assertions.assertTrue(events.stream().anyMatch(event -> event.getStepType() == BuildStepType.CHECKING
+                                                                    && "Testing the app".equals(event.getText())), events.toString());
+            Assertions.assertEquals(new JsonArray().add("enchiladas 1").add("enchiladas 2").add("enchiladas 3"),
+                                    Json.decodeValue(toolResultOf(anthropic.requests().getLast())));
+            Assertions.assertEquals(participant.getId(), recipeService.lastCaller().getId());
+        } finally {
+            await(serviceRegistry.unregister(recipes).toCompletionStage().toCompletableFuture());
+        }
+    }
+
+    @Test
+    public void testCallAppServiceReportsTheErrorOfTheFunctionAndAServiceTheAppDoesNotPublish() throws Exception {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        // published by another app of the organization, which the todo app's calls do not reach
+        ServiceIdentifier otherApp = publishRecipeService("other");
+        ServiceIdentifier recipes = publishRecipeService("todo");
+        try {
+            anthropic.replyWithToolCall("callAppService", new JsonObject().put("service", "recipeapp.RecipeService")
+                                                                          .put("function", "searchTheWeb")
+                                                                          .put("arguments", "[\"enchiladas\"]"));
+            anthropic.replyWithToolCall("callAppService", new JsonObject().put("service", "recipeapp.MealService")
+                                                                          .put("function", "searchMeals")
+                                                                          .put("arguments", "[]"));
+            anthropic.replyWithToolCall("callAppService", new JsonObject().put("service", "app.other~recipeapp.RecipeService")
+                                                                          .put("function", "searchRecipes")
+                                                                          .put("arguments", "[\"enchiladas\", 1]"));
+            anthropic.replyWithText("The web search fails");
+
+            chat("todo", "Does the search work?");
+
+            String failed = toolResultOf(anthropic.requests().get(1));
+            Assertions.assertTrue(failed.contains("The function failed: fetch failed: connect ECONNREFUSED"), failed);
+            String missing = toolResultOf(anthropic.requests().get(2));
+            Assertions.assertTrue(missing.contains("No microservice of the app publishes recipeapp.MealService"), missing);
+            String otherZone = toolResultOf(anthropic.requests().get(3));
+            Assertions.assertTrue(otherZone.contains("The service is named by its namespace and name"), otherZone);
+        } finally {
+            await(serviceRegistry.unregister(recipes).toCompletionStage().toCompletableFuture());
+            await(serviceRegistry.unregister(otherApp).toCompletionStage().toCompletableFuture());
+        }
+    }
+
+    // publishes the recipe service in the zone of the organization's app, as the app's microservice would
+    private ServiceIdentifier publishRecipeService(String applicationId) throws Exception {
+        ServiceIdentifier ret = new ServiceIdentifier(DomainUtil.applicationZone(organizationId(), applicationId),
+                                                      "recipeapp", "RecipeService", null, "0.1.0");
+        await(serviceRegistry.register(ret, RecipeService.class, recipeService).toCompletionStage().toCompletableFuture());
+        return ret;
+    }
+
+    private MicroserviceDeployment microservice(Project project, String name, String workloadId, String failureMessage) {
+        return new MicroserviceDeployment().setOrganizationId(organizationId())
+                                           .setApplicationId(project.getApplicationId())
+                                           .setProjectId(project.getId())
+                                           .setName(name)
+                                           .setWorkloadId(workloadId)
+                                           .setFailureMessage(failureMessage);
     }
 
     // the todo app's project, whose repository on GitHub holds the files given

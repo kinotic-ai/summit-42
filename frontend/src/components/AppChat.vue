@@ -191,11 +191,11 @@ const thinking = computed(() => streaming.value && activeStep.value === null
                                 && (reply.value?.parts.length === 0 || now.value - lastEventAt.value >= 1000))
 
 // the stage follows the turn's last step: reading plans, a quiet stretch after reading is Claude writing the code it
-// then commits, and deploying runs until the app is live
+// then commits, and deploying runs until the app is live; checking the deployed app keeps the stage it is in
 const progress = computed<BuildProgress | null>(() => {
   let ret: BuildProgress | null = null
   if (streaming.value && reply.value) {
-    const last = lastStepOf(turns.value.slice(turnFrom))
+    const last = lastStageStepOf(turns.value.slice(turnFrom))
     let stage: BuildStage = 'PLANNING'
     if (last?.type === 'LIVE') {
       stage = 'LIVE'
@@ -205,7 +205,7 @@ const progress = computed<BuildProgress | null>(() => {
       stage = 'WRITING'
     }
     let detail = activeStep.value?.text ?? 'Thinking'
-    if (stage === 'LIVE' && last) {
+    if (stage === 'LIVE' && last && !activeStep.value) {
       detail = last.text
     } else if (stage === 'WRITING' && !activeStep.value) {
       detail = 'Writing the code'
@@ -467,10 +467,10 @@ function activeStepOf(turn: Turn): Step | null {
 }
 
 // the last step of the replies, which are in order
-function lastStepOf(replies: Turn[]): Step | null {
-  const runs = replies.flatMap(turn => turn.parts).filter(part => part.type === 'steps')
-  const steps = runs[runs.length - 1]?.steps ?? []
-  return steps[steps.length - 1] ?? null
+// the replies' last step that sets the stage, which a CHECKING step does not
+function lastStageStepOf(replies: Turn[]): Step | null {
+  const steps = replies.flatMap(turn => turn.parts).flatMap(part => part.type === 'steps' ? part.steps : [])
+  return steps.filter(step => step.type !== 'CHECKING').pop() ?? null
 }
 
 function settleActiveStep(turn: Turn, state: Step['state']) {

@@ -20,13 +20,15 @@ public class Summit42Configuration {
 
     /**
      * Hosts Summit 42's services in the management-api zone, beside the management-api services it runs in process,
-     * and reaches the system-api service that holds the LLM configurations.
+     * and reaches the system-api service that holds the LLM configurations and the services each application
+     * publishes in its own zone, which the app builder tries out.
      */
     @Bean
     public ZonePartitioningService zonePartitioningService() {
         return ZonePartitioningService.of("summit-42",
                                           Set.of(DomainUtil.MANAGEMENT_API_ZONE),
-                                          Set.of(DomainUtil.MANAGEMENT_API_ZONE, DomainUtil.SYSTEM_API_ZONE));
+                                          Set.of(DomainUtil.MANAGEMENT_API_ZONE, DomainUtil.SYSTEM_API_ZONE,
+                                                 DomainUtil.APP_ZONE_PREFIX));
     }
 
     /**
