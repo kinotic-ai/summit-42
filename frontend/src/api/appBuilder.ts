@@ -32,11 +32,16 @@ export const BUILD_STAGES = ['PLANNING', 'WRITING', 'DEPLOYING', 'LIVE'] as cons
 
 export type BuildStage = typeof BUILD_STAGES[number]
 
-/** Where a running turn is: its stage, a line saying what it is doing, and when it started in epoch milliseconds. */
+/**
+ * Where a running turn's current round of work is: its stage, a line saying what it is doing, and when the round
+ * started and, once the app is live, finished, in epoch milliseconds. A turn that changes the app again after it went
+ * live starts a new round.
+ */
 export interface BuildProgress {
     stage: BuildStage
     detail: string
     startedAt: number
+    finishedAt: number | null
 }
 
 export type ChatRole = 'USER' | 'ASSISTANT'

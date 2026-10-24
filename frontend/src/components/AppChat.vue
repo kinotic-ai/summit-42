@@ -153,7 +153,9 @@ const reply = ref<Turn | null>(null)
 /** Messages sent during the running turn that it has not read yet, in the order they were sent. */
 const queued = ref<string[]>([])
 const lastEventAt = ref(0)
-const turnStartedAt = ref(0)
+// when the round of work the build card tracks started, and the round's last step that sets the stage
+const roundStartedAt = ref(0)
+const stageStep = ref<Step | null>(null)
 const now = ref(Date.now())
 
 const scroller = ref<HTMLElement | null>(null)
@@ -162,8 +164,6 @@ const input = ref<HTMLTextAreaElement | null>(null)
 let subscription: Subscription | null = null
 // the stream the reply follows; a stream the reply no longer follows changes nothing
 let followed: object | null = null
-// where the running turn's replies start in turns: a message the turn reads ends one reply and starts the next
-let turnFrom = 0
 let clock: ReturnType<typeof setInterval> | null = null
 let contentObserver: MutationObserver | null = null
 // true while the reader is at the bottom of the messages, where new output keeps them
@@ -190,12 +190,13 @@ const currentStep = computed(() => activeStep.value?.text ?? null)
 const thinking = computed(() => streaming.value && activeStep.value === null
                                 && (reply.value?.parts.length === 0 || now.value - lastEventAt.value >= 1000))
 
-// the stage follows the turn's last step: reading plans, a quiet stretch after reading is Claude writing the code it
-// then commits, and deploying runs until the app is live; checking the deployed app keeps the stage it is in
+// the stage follows the round's last step: reading plans, a quiet stretch after reading is Claude writing the code it
+// then commits, and deploying runs until the app is live, which ends the round; checking the deployed app keeps the
+// stage it is in
 const progress = computed<BuildProgress | null>(() => {
   let ret: BuildProgress | null = null
   if (streaming.value && reply.value) {
-    const last = lastStageStepOf(turns.value.slice(turnFrom))
+    const last = stageStep.value
     let stage: BuildStage = 'PLANNING'
     if (last?.type === 'LIVE') {
       stage = 'LIVE'
@@ -210,7 +211,7 @@ const progress = computed<BuildProgress | null>(() => {
     } else if (stage === 'WRITING' && !activeStep.value) {
       detail = 'Writing the code'
     }
-    ret = { stage, detail, startedAt: turnStartedAt.value }
+    ret = { stage, detail, startedAt: roundStartedAt.value, finishedAt: stage === 'LIVE' && last ? last.startedAt : null }
   }
   return ret
 })
@@ -356,11 +357,11 @@ async function reload() {
 
 // starts the running turn's first reply at the given time
 function startTurn(startedAt: number) {
-  turnFrom = turns.value.length
   addReply()
   streaming.value = true
   lastEventAt.value = startedAt
-  turnStartedAt.value = startedAt
+  roundStartedAt.value = startedAt
+  stageStep.value = null
   now.value = Date.now()
   clock = setInterval(() => { now.value = Date.now() }, 1000)
 }
@@ -466,11 +467,16 @@ function activeStepOf(turn: Turn): Step | null {
   return last?.type === 'steps' ? last.steps.find(step => step.state === 'active') ?? null : null
 }
 
-// the last step of the replies, which are in order
-// the replies' last step that sets the stage, which a CHECKING step does not
-function lastStageStepOf(replies: Turn[]): Step | null {
-  const steps = replies.flatMap(turn => turn.parts).flatMap(part => part.type === 'steps' ? part.steps : [])
-  return steps.filter(step => step.type !== 'CHECKING').pop() ?? null
+// adds the step, which sets the stage unless it checks the deployed app; the first to set it after the app went live
+// starts a round
+function addStageStep(turn: Turn, step: Step) {
+  addStep(turn, step)
+  if (step.type !== 'CHECKING') {
+    if (stageStep.value?.type === 'LIVE') {
+      roundStartedAt.value = step.startedAt
+    }
+    stageStep.value = step
+  }
 }
 
 function settleActiveStep(turn: Turn, state: Step['state']) {
@@ -505,13 +511,13 @@ function apply(turn: Turn, event: BuildEvent) {
     case 'PROGRESS':
       if (event.text && event.text !== currentStep.value) {
         settleActiveStep(turn, 'done')
-        addStep(turn, { text: event.text, state: 'active', startedAt: event.timestamp, type: event.stepType })
+        addStageStep(turn, { text: event.text, state: 'active', startedAt: event.timestamp, type: event.stepType })
       }
       break
     case 'APP_READY':
       settleActiveStep(turn, 'done')
       if (event.url) {
-        addStep(turn, { text: `Live at ${hostOf(event.url)}`, state: 'done', startedAt: event.timestamp, type: 'LIVE' })
+        addStageStep(turn, { text: `Live at ${hostOf(event.url)}`, state: 'done', startedAt: event.timestamp, type: 'LIVE' })
         emit('deployed', event.url)
       }
       break
