@@ -17,7 +17,7 @@ bun run dev          # http://localhost:5175
 ```
 
 The management server must admit `http://localhost:5175` in its CORS pattern, as the
-root [README](../README.md#kinotic-configuration) shows. Signing up needs the platform's GitHub sign-in
+root [README](../README.md#kinotic-configuration) shows. Signing up needs the system's GitHub sign-in
 registration, since every organization builds its apps in its own GitHub account.
 
 ## Configuration

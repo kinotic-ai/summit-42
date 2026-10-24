@@ -5,7 +5,7 @@ spring:
 # Summit 42 joins the Kinotic cluster as a member; deployments set the cluster's discovery, for example
 # KINOTIC_IGNITE_DISCOVERYTYPE=LOCAL with KINOTIC_IGNITE_LOCALADDRESSES naming the Kinotic servers.
 # It runs Kinotic's domain and management-api modules in process, so a deployment also gives it the settings the
-# management server has: Elasticsearch, secret storage, email, platform secrets and the GitHub App's key and webhook
+# management server has: Elasticsearch, secret storage, email, system secrets and the GitHub App's key and webhook
 # secret.
 
 kinotic:

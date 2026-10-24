@@ -29,7 +29,7 @@ import java.util.concurrent.ExecutionException;
 /**
  * Covers who may call {@code AppBuilderService} and what it does with an app's conversation. A conversation a test
  * needs is placed in {@link BuilderSessionRepository}, since a chat turn that would record one needs the app's project
- * and the platform's LLM.
+ * and the system's LLM.
  */
 public class AppBuilderServiceTests extends AppBuilderServiceTestBase {
 

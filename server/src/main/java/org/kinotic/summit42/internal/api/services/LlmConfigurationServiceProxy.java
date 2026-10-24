@@ -8,7 +8,7 @@ import org.kinotic.domain.api.utils.DomainUtil;
 import org.kinotic.system.api.model.llm.LlmConfiguration;
 
 /**
- * The platform's LLM configurations, from the system server's {@code LlmConfigurationService}.
+ * The system's LLM configurations, from the system server's {@code LlmConfigurationService}.
  */
 @Proxy(namespace = "org.kinotic.system.api.services", name = "LlmConfigurationService")
 @Zone(DomainUtil.SYSTEM_API_ZONE)

@@ -117,7 +117,7 @@ export async function logout(): Promise<void> {
     }
 }
 
-/** The provider keys (e.g. "github") of the platform's social registrations, offered when no organization is known. */
+/** The provider keys (e.g. "github") of the system's social registrations, offered when no organization is known. */
 export async function fetchSocialProviders(): Promise<string[]> {
     let ret: string[] = []
     const res = await fetch(apiUrl('/api/auth/org/login/providers'))

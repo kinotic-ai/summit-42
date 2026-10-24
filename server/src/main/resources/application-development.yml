@@ -25,9 +25,9 @@ kinotic:
       backend: IN_MEMORY
       # The development master key the management server's development profile uses
       masterKey: 0qWH2oHEp27LLD7iBHEiABqJFf1q5GRYK6OdMc5Wdv4=
-  platformSecrets:
+  systemSecrets:
     generateMissing: true
-    jwtSigningKeysPath: ${user.home}/.kinotic/dev-platform-secrets/jwt-signing-keys
+    jwtSigningKeysPath: ${user.home}/.kinotic/dev-system-secrets/jwt-signing-keys
 
 summit42:
   # The UI's vite dev server
