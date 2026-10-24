@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Holds the platform's LLM configurations and their API keys in memory. Like the real service, it refuses a key to a
+ * Holds the system's LLM configurations and their API keys in memory. Like the real service, it refuses a key to a
  * call made for a participant.
  */
 @RequiredArgsConstructor

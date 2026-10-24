@@ -20,7 +20,7 @@ import org.springframework.validation.annotation.Validated;
 public class Summit42Properties {
 
     /**
-     * The name of the platform's LLM configuration the app builder calls, managed on the system console's
+     * The name of the system's LLM configuration the app builder calls, managed on the system console's
      * LLM configurations page.
      */
     @NotBlank

@@ -117,10 +117,10 @@ public class DefaultAppBuilderService implements AppBuilderService {
         Validate.notBlank(name, "Name the app");
         return summarize(StringUtils.trimToNull(description))
                 .compose(summary -> {
-                    // the platform gives each of the app's users a tenant, so an entity can keep its rows private to each user
+                    // the system gives each of the app's users a tenant, so an entity can keep its rows private to each user
                     Application application = new Application(name.strip(), summary)
                             .setOrganizationId(participant.getOrganizationId())
-                            .setTenantManagement(TenantManagement.PLATFORM);
+                            .setTenantManagement(TenantManagement.SYSTEM);
                     return callAs(participant, () -> applicationService.createSync(application));
                 })
                 // an app deleted earlier under the same name had the same id, and its conversation is not this app's;

@@ -24,7 +24,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Builds the {@link ChatClient} the app builder talks to Claude through, from the platform's LLM configuration
+ * Builds the {@link ChatClient} the app builder talks to Claude through, from the system's LLM configuration
  * named by {@link Summit42Properties#getLlmConfigurationName()}. Between the steps of a chat turn, the client gives
  * Claude the messages the user sent to steer the turn.
  */

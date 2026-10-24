@@ -66,7 +66,7 @@ import java.util.stream.IntStream;
 
 /**
  * Covers the app builder's flows against fakes of the Kinotic services it calls, and a fake of Anthropic's API the
- * platform's LLM configuration points at.
+ * system's LLM configuration points at.
  */
 public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
 
@@ -151,7 +151,7 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         Assertions.assertEquals("Todo List", application.getName());
         Assertions.assertNull(application.getDescription());
         Assertions.assertEquals(organizationId(), application.getOrganizationId());
-        Assertions.assertEquals(TenantManagement.PLATFORM, application.getTenantManagement());
+        Assertions.assertEquals(TenantManagement.SYSTEM, application.getTenantManagement());
         // the app is the application the application service created, under the id it assigned
         Assertions.assertEquals(application.getId(), app.getApplicationId());
         Assertions.assertEquals("Todo List", app.getName());
