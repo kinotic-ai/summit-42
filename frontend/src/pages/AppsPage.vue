@@ -68,8 +68,8 @@
 
     <SideDrawer v-if="creating" title="New app" subtitle="Name it and say what it should do. Summit 42 starts building right away." @close="creating = false">
       <CreateAppForm @created="open">
-        <template #cancel="{ saving }">
-          <button type="button" class="btn btn--secondary" :disabled="saving" @click="creating = false">Cancel</button>
+        <template #cancel>
+          <button type="button" class="btn btn--secondary" @click="creating = false">Cancel</button>
         </template>
       </CreateAppForm>
     </SideDrawer>

@@ -1,5 +1,5 @@
 import { Kinotic, type IKinotic, type IServiceProxy } from '@kinotic-ai/core'
-import type { Observable } from 'rxjs'
+import { lastValueFrom, tap, type Observable } from 'rxjs'
 import { reactive } from 'vue'
 import { SESSION } from '@/api/session'
 
@@ -54,6 +54,20 @@ export interface BuilderApp {
     url: string | null
 }
 
+/**
+ * What an event of creating an app reports: DESCRIBING, CREATING_APPLICATION and CREATING_REPOSITORY are the steps,
+ * in order, each sent as it starts, and CREATED carries the created app. DESCRIBING is sent only for an app given a
+ * description, which Claude summarizes.
+ */
+export type AppCreationEventType = 'DESCRIBING' | 'CREATING_APPLICATION' | 'CREATING_REPOSITORY' | 'CREATED'
+
+/** One event of creating an app. */
+export interface AppCreationEvent {
+    type: AppCreationEventType
+    /** The created app, for CREATED. */
+    app: BuilderApp | null
+}
+
 /** The chat with the builder about one app. */
 export interface Conversation {
     messages: ChatMessage[]
@@ -75,9 +89,12 @@ export class AppBuilderService {
         return this.serviceProxy.invoke('findApps')
     }
 
-    /** Creates an app with its GitHub repository; rejects when the organization already has an app with that name. */
-    public createApp(name: string, description: string | null): Promise<BuilderApp> {
-        return this.serviceProxy.invoke('createApp', [name, description])
+    /**
+     * Creates an app with its GitHub repository, streaming each step as it starts and then the created app; errors
+     * when the organization already has an app with that name, or the app cannot be created.
+     */
+    public createApp(name: string, description: string | null): Observable<AppCreationEvent> {
+        return this.serviceProxy.invokeStream('createApp', [name, description])
     }
 
     /**
@@ -134,9 +151,14 @@ export async function ensureAppsLoaded(): Promise<void> {
 // the descriptions of apps created here whose chats have not sent them yet, keyed by application id
 const unsentDescriptions = new Map<string, string>()
 
-/** Creates an app and adds it to {@link APPS}; its description becomes the first message of its chat. */
-export async function createApp(name: string, description: string | null): Promise<BuilderApp> {
-    const app = await APP_BUILDER.createApp(name, description)
+/**
+ * Creates an app and adds it to {@link APPS}, calling onEvent with each step as it starts and then CREATED; its
+ * description becomes the first message of its chat.
+ */
+export async function createApp(name: string, description: string | null,
+                                onEvent: (type: AppCreationEventType) => void): Promise<BuilderApp> {
+    const created = await lastValueFrom(APP_BUILDER.createApp(name, description).pipe(tap(event => onEvent(event.type))))
+    const app = created.app as BuilderApp
     if (description) {
         unsentDescriptions.set(app.applicationId, description)
     }

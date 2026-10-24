@@ -784,74 +784,12 @@ async function startOver() {
 
 .steps {
   align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  margin: 0;
-  padding: 0.75rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.025);
-  list-style: none;
-  font-size: 0.875rem;
-  line-height: 1.4;
 }
 
-.step {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  color: var(--text-nav);
-  overflow-wrap: anywhere;
-}
-
-.step__text {
-  flex: 1;
-  min-width: 0;
-}
-
-.step__elapsed,
 .thinking__elapsed {
   flex: none;
   color: var(--text-subtle);
   font-variant-numeric: tabular-nums;
-}
-
-.step__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 1.15rem;
-  height: 1.15rem;
-  border-radius: 50%;
-}
-
-.step__icon .icon {
-  width: 0.7rem;
-  height: 0.7rem;
-}
-
-.step__icon .spinner {
-  width: 0.8rem;
-  height: 0.8rem;
-}
-
-.step--done .step__icon {
-  background: rgba(95, 207, 158, 0.18);
-  color: var(--success-text);
-}
-
-.step--active {
-  color: var(--accent-link);
-}
-
-.step--failed {
-  color: var(--danger-text);
-}
-
-.step--failed .step__icon {
-  background: var(--danger-soft);
 }
 
 .thinking {

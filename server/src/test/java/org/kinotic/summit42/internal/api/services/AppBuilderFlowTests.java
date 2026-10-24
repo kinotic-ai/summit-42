@@ -25,6 +25,8 @@ import org.kinotic.management.api.model.deployment.ProjectDeployment;
 import org.kinotic.management.api.model.deployment.UiDeployment;
 import org.kinotic.management.api.services.github.ProjectRepoCredentialService;
 import org.kinotic.summit42.api.config.Summit42Properties;
+import org.kinotic.summit42.api.model.AppCreationEvent;
+import org.kinotic.summit42.api.model.AppCreationEventType;
 import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.BuildEventType;
 import org.kinotic.summit42.api.model.BuildStepType;
@@ -50,7 +52,6 @@ import org.kinotic.system.api.model.llm.LlmProviderType;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -61,7 +62,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.function.Function;
 import java.util.stream.IntStream;
 
 /**
@@ -145,7 +145,7 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
 
     @Test
     public void testCreateAppCreatesTheApplicationAndItsProject() throws Exception {
-        BuilderApp app = await(callAs(participant, service -> service.createApp("  Todo List ", "  ")));
+        BuilderApp app = createApp("  Todo List ", "  ");
 
         Application application = applicationService.applicationsOf(organizationId()).values().iterator().next();
         Assertions.assertEquals("Todo List", application.getName());
@@ -171,7 +171,7 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
                         + " customer gets a reminder the day before.";
         anthropic.replyWithText("Books dog grooming ", "appointments and reminds customers.\n");
 
-        BuilderApp app = await(callAs(participant, service -> service.createApp("Grooming", wanted)));
+        BuilderApp app = createApp("Grooming", wanted);
 
         String summary = "Books dog grooming appointments and reminds customers.";
         Assertions.assertEquals(summary, app.getDescription());
@@ -181,10 +181,31 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     @Test
+    public void testCreateAppReportsEachStepAsItStartsThenTheApp() throws Exception {
+        anthropic.replyWithText("Books dog grooming appointments.");
+
+        List<AppCreationEvent> described = await(createAppAs(participant, "Grooming", "Customers book grooming"));
+        List<AppCreationEvent> undescribed = await(createAppAs(participant, "Todo", null));
+
+        Assertions.assertEquals(List.of(AppCreationEventType.DESCRIBING,
+                                        AppCreationEventType.CREATING_APPLICATION,
+                                        AppCreationEventType.CREATING_REPOSITORY,
+                                        AppCreationEventType.CREATED),
+                                described.stream().map(AppCreationEvent::getType).toList());
+        Assertions.assertEquals(List.of(AppCreationEventType.CREATING_APPLICATION,
+                                        AppCreationEventType.CREATING_REPOSITORY,
+                                        AppCreationEventType.CREATED),
+                                undescribed.stream().map(AppCreationEvent::getType).toList());
+        Assertions.assertTrue(described.subList(0, 3).stream().allMatch(event -> event.getApp() == null));
+        Assertions.assertEquals("Grooming", described.getLast().getApp().getName());
+        Assertions.assertEquals("Todo", undescribed.getLast().getApp().getName());
+    }
+
+    @Test
     public void testCreateAppWhoseDescriptionCannotBeSummarizedHasNone() throws Exception {
         anthropic.replyWithError(400);
 
-        BuilderApp app = await(callAs(participant, service -> service.createApp("Grooming", "Customers book grooming")));
+        BuilderApp app = createApp("Grooming", "Customers book grooming");
 
         Assertions.assertEquals("Grooming", app.getName());
         Assertions.assertNull(app.getDescription());
@@ -196,7 +217,7 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         projectService.failCreations(organizationId());
 
         ExecutionException e = Assertions.assertThrows(ExecutionException.class,
-                                                       () -> await(callAs(participant, service -> service.createApp("Todo", null))));
+                                                       () -> await(createAppAs(participant, "Todo", null)));
 
         Assertions.assertEquals("The repository could not be created", e.getCause().getMessage());
         Assertions.assertTrue(applicationService.applicationsOf(organizationId()).isEmpty());
@@ -206,7 +227,7 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     public void testCreateAppRendersARepositoryWhoseInitializationFailedAgain() throws Exception {
         projectService.createWith(organizationId(), RepositoryConnectionStatus.INITIALIZATION_FAILED);
 
-        BuilderApp app = await(callAs(participant, service -> service.createApp("Todo", null)));
+        BuilderApp app = createApp("Todo", null);
 
         Assertions.assertEquals("Todo", app.getName());
         Assertions.assertEquals(RepositoryConnectionStatus.CONNECTED,
@@ -219,7 +240,7 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         projectService.failRetries(organizationId());
 
         ExecutionException e = Assertions.assertThrows(ExecutionException.class,
-                                                       () -> await(callAs(participant, service -> service.createApp("Todo", null))));
+                                                       () -> await(createAppAs(participant, "Todo", null)));
 
         Assertions.assertEquals("The template could not be rendered", e.getCause().getMessage());
     }
@@ -748,12 +769,13 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         return chatAs(participant, applicationId, message).collectList().block(TIMEOUT);
     }
 
-    // the stream's request carries the participant bound when followRunningTurn is invoked, and is sent on subscription
     private Flux<BuildEvent> followAs(String applicationId) {
-        return Mono.fromCompletionStage(securityContext.callAs(participant,
-                                                               () -> CompletableFuture.completedFuture(
-                                                                       appBuilderService.followRunningTurn(applicationId))))
-                   .flatMapMany(Function.identity());
+        return streamAs(participant, service -> service.followRunningTurn(applicationId));
+    }
+
+    // the app the last event of createApp carries
+    private BuilderApp createApp(String name, String description) throws Exception {
+        return await(createAppAs(participant, name, description)).getLast().getApp();
     }
 
     private static List<String> errorsOf(List<BuildEvent> events) {

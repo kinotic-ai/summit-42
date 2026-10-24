@@ -5,6 +5,7 @@ import org.kinotic.core.api.annotations.Proxy;
 import org.kinotic.core.api.annotations.Version;
 import org.kinotic.core.api.annotations.Zone;
 import org.kinotic.domain.api.utils.DomainUtil;
+import org.kinotic.summit42.api.model.AppCreationEvent;
 import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.BuilderApp;
 import org.kinotic.summit42.api.model.Conversation;
@@ -23,7 +24,7 @@ public interface AppBuilderServiceProxy {
 
     Future<List<BuilderApp>> findApps();
 
-    Future<BuilderApp> createApp(String name, String description);
+    Flux<AppCreationEvent> createApp(String name, String description);
 
     Flux<BuildEvent> chat(String applicationId, String message);
 

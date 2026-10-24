@@ -5,6 +5,7 @@ import org.kinotic.core.api.security.Participant;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.domain.api.model.security.participant.DefaultOrganizationParticipant;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
+import org.kinotic.summit42.api.model.AppCreationEvent;
 import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.fakes.FakeKinoticConfiguration;
 import org.kinotic.summit42.internal.api.proxies.AppBuilderServiceProxy;
@@ -62,11 +63,19 @@ public abstract class AppBuilderServiceTestBase {
         return securityContext.callAs(participant, () -> call.apply(appBuilderService).toCompletionStage());
     }
 
-    // the stream's request carries the participant bound when chat is invoked, and is sent on subscription
     protected Flux<BuildEvent> chatAs(Participant participant, String applicationId, String message) {
+        return streamAs(participant, service -> service.chat(applicationId, message));
+    }
+
+    // the events createApp reports, ending with the created app
+    protected CompletableFuture<List<AppCreationEvent>> createAppAs(Participant participant, String name, String description) {
+        return streamAs(participant, service -> service.createApp(name, description)).collectList().toFuture();
+    }
+
+    // the stream's request carries the participant bound when the function is invoked, and is sent on subscription
+    protected <T> Flux<T> streamAs(Participant participant, Function<AppBuilderServiceProxy, Flux<T>> call) {
         return Mono.fromCompletionStage(securityContext.callAs(participant,
-                                                               () -> CompletableFuture.completedFuture(
-                                                                       appBuilderService.chat(applicationId, message))))
+                                                               () -> CompletableFuture.completedFuture(call.apply(appBuilderService))))
                    .flatMapMany(Function.identity());
     }
 
