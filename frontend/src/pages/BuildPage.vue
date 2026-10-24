@@ -17,7 +17,7 @@
       <section v-if="progress || !app.url" class="status glass">
         <div class="tracker__head">
           <p :class="['status__eyebrow', { 'status__eyebrow--idle': !progress }]">{{ trackerTitle }}</p>
-          <span v-if="progress" class="tracker__elapsed">{{ formatDuration(now - progress.startedAt) }}</span>
+          <span v-if="progress" class="tracker__elapsed">{{ formatDuration((progress.finishedAt ?? now) - progress.startedAt) }}</span>
         </div>
         <ol class="tracker">
           <li v-for="(stage, index) in BUILD_STAGES" :key="stage" :class="['tracker__stage', `tracker__stage--${stageState(index)}`]">
