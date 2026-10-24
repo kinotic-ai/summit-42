@@ -60,6 +60,11 @@ configurations {
     }
 }
 
+configurations.configureEach {
+    // Kinotic republishes 5.0.0-SNAPSHOT in place, so every resolution checks the repository for the latest one
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
 dependencies {
     implementation 'org.kinotic:kinotic-core'
     // run in process, as the management server runs them; kinotic-ee holds the secret storage backends its
