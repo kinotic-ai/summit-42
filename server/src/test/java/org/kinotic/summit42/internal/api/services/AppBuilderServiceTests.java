@@ -50,7 +50,7 @@ public class AppBuilderServiceTests extends AppBuilderServiceTestBase {
         String applicationId = "app";
 
         assertRefused(callAs(system, AppBuilderServiceProxy::findApps));
-        assertRefused(callAs(system, service -> service.createApp("Todo", null)));
+        assertRefused(createAppAs(system, "Todo", null));
         assertRefused(callAs(system, service -> service.findConversation(applicationId)));
         assertRefused(callAs(system, service -> service.resetConversation(applicationId)));
         StepVerifier.create(chatAs(system, applicationId, "Build a todo app"))
@@ -71,7 +71,7 @@ public class AppBuilderServiceTests extends AppBuilderServiceTestBase {
 
     @Test
     public void testCreateAppRequiresAName() {
-        CompletableFuture<?> created = callAs(newOrganizationParticipant(), service -> service.createApp("  ", "A todo app"));
+        CompletableFuture<?> created = createAppAs(newOrganizationParticipant(), "  ", "A todo app");
 
         ExecutionException e = Assertions.assertThrows(ExecutionException.class, () -> await(created));
         Assertions.assertEquals("Name the app", e.getCause().getMessage());

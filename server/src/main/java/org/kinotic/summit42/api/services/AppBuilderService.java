@@ -2,6 +2,7 @@ package org.kinotic.summit42.api.services;
 
 import io.vertx.core.Future;
 import org.kinotic.core.api.annotations.Publish;
+import org.kinotic.summit42.api.model.AppCreationEvent;
 import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.BuilderApp;
 import org.kinotic.summit42.api.model.Conversation;
@@ -25,13 +26,17 @@ public interface AppBuilderService {
     /**
      * Creates an app: a Kinotic application with the name, whose id is the slugified name, and its project, whose
      * GitHub repository is generated from Kinotic's app template. Requires the organization to have linked GitHub.
+     * The stream reports each step as it starts, in order, and ends with a
+     * {@link org.kinotic.summit42.api.model.AppCreationEventType#CREATED} event carrying the app; it fails with the
+     * reason when the app cannot be created. The app is created to the end whether or not the stream is still
+     * subscribed.
      *
      * @param name        the app's name; fails when the organization already has an application with that name
      * @param description what the user wants the app to do, in their own words, or null; the app's description is
      *                    Claude's one-line summary of it, or null when it is null or cannot be summarized
-     * @return the created app
+     * @return the steps of creating the app, then the created app
      */
-    Future<BuilderApp> createApp(String name, String description);
+    Flux<AppCreationEvent> createApp(String name, String description);
 
     /**
      * Sends the user's message about the app and streams Claude's turn: its reply as

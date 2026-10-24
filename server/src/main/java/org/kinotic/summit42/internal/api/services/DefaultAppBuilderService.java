@@ -21,6 +21,8 @@ import org.kinotic.management.api.model.deployment.UiDeployment;
 import org.kinotic.management.api.services.ApplicationService;
 import org.kinotic.management.api.services.ProjectService;
 import org.kinotic.management.api.services.deployment.UiDeploymentService;
+import org.kinotic.summit42.api.model.AppCreationEvent;
+import org.kinotic.summit42.api.model.AppCreationEventType;
 import org.kinotic.summit42.api.model.BuildEvent;
 import org.kinotic.summit42.api.model.BuildEventType;
 import org.kinotic.summit42.api.model.BuilderApp;
@@ -112,27 +114,43 @@ public class DefaultAppBuilderService implements AppBuilderService {
     }
 
     @Override
-    public Future<BuilderApp> createApp(String name, String description) {
+    public Flux<AppCreationEvent> createApp(String name, String description) {
         OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
         Validate.notBlank(name, "Name the app");
-        return summarize(StringUtils.trimToNull(description))
-                .compose(summary -> {
-                    // the system gives each of the app's users a tenant, so an entity can keep its rows private to each user
-                    Application application = new Application(name.strip(), summary)
-                            .setOrganizationId(participant.getOrganizationId())
-                            .setTenantManagement(TenantManagement.SYSTEM);
-                    return callAs(participant, () -> applicationService.createSync(application));
-                })
-                // an app deleted earlier under the same name had the same id, and its conversation is not this app's;
-                // one that cannot be deleted is logged rather than failing an app that was created
-                .compose(created -> sessionRepository.deleteById(new ApplicationKey(participant.getOrganizationId(), created.getId()))
-                                                     .onFailure(e -> log.error("The earlier conversation of app {} could not be deleted",
-                                                                               created.getId(), e))
-                                                     .otherwiseEmpty()
-                                                     .map(created))
-                .compose(created -> createProject(participant, created)
-                        .compose(project -> buildable(participant, project))
-                        .map(project -> new BuilderApp(created.getId(), created.getName(), created.getDescription(), null)));
+        String wanted = StringUtils.trimToNull(description);
+        // the futures run to their end when the subscriber goes away, and the sink drops what it emits after that
+        return Flux.create(sink -> {
+            if (wanted != null) {
+                sink.next(AppCreationEvent.step(AppCreationEventType.DESCRIBING));
+            }
+            summarize(wanted)
+                    .compose(summary -> {
+                        sink.next(AppCreationEvent.step(AppCreationEventType.CREATING_APPLICATION));
+                        // the system gives each of the app's users a tenant, so an entity can keep its rows private to each user
+                        Application application = new Application(name.strip(), summary)
+                                .setOrganizationId(participant.getOrganizationId())
+                                .setTenantManagement(TenantManagement.SYSTEM);
+                        return callAs(participant, () -> applicationService.createSync(application));
+                    })
+                    // an app deleted earlier under the same name had the same id, and its conversation is not this app's;
+                    // one that cannot be deleted is logged rather than failing an app that was created
+                    .compose(created -> sessionRepository.deleteById(new ApplicationKey(participant.getOrganizationId(), created.getId()))
+                                                         .onFailure(e -> log.error("The earlier conversation of app {} could not be deleted",
+                                                                                   created.getId(), e))
+                                                         .otherwiseEmpty()
+                                                         .map(created))
+                    .compose(created -> {
+                        sink.next(AppCreationEvent.step(AppCreationEventType.CREATING_REPOSITORY));
+                        return createProject(participant, created)
+                                .compose(project -> buildable(participant, project))
+                                .map(project -> new BuilderApp(created.getId(), created.getName(), created.getDescription(), null));
+                    })
+                    .onSuccess(app -> {
+                        sink.next(AppCreationEvent.created(app));
+                        sink.complete();
+                    })
+                    .onFailure(sink::error);
+        });
     }
 
     // Claude's one-line summary of what the user wants the app to do; an app whose summary fails is created without
