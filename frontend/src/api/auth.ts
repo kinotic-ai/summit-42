@@ -271,7 +271,7 @@ export function inviteProviderUrl(configurationId: string, token: string): strin
 export function authErrorMessage(code: string, provider: string | null): string {
     let ret: string
     switch (code) {
-        case 'no_user': ret = 'No account signs in with that identity. Create one first.'; break
+        case 'no_user': ret = `No Summit 42 account is linked to ${provider ? `your ${providerDisplayName(provider)} account` : 'that sign-in'}. Sign in the way you joined, or create an account.`; break
         case 'multiple_organizations': ret = 'Your account belongs to several organizations, but the choice expired. Please sign in again.'; break
         case 'user_exists': ret = 'That email already signs in here. Sign in instead.'; break
         case 'user_disabled': ret = 'This account cannot sign in to the organization.'; break
