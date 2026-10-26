@@ -6,11 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.kinotic.core.api.exceptions.AuthorizationException;
 import org.kinotic.core.api.security.Participant;
 import org.kinotic.core.api.security.SecurityContext;
-import org.kinotic.domain.api.model.security.OrganizationMember;
+import org.kinotic.domain.api.model.security.identity.ApplicationParticipantIdentity;
+import org.kinotic.domain.api.model.security.identity.OrganizationParticipantIdentity;
 import org.kinotic.domain.api.model.security.participant.DefaultOrganizationParticipant;
 import org.kinotic.domain.api.model.security.participant.DefaultSystemParticipant;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
-import org.kinotic.management.api.model.PendingInviteSummary;
 import org.kinotic.summit42.fakes.FakeKinoticConfiguration;
 import org.kinotic.summit42.fakes.FakeMemberInvitationService;
 import org.kinotic.summit42.fakes.SentInvitation;
@@ -62,18 +62,22 @@ public class InvitationServiceTests {
                                                                      .roles(List.of())
                                                                      .build();
 
-        OrganizationMember member = await(callAs(user, service -> service.addMember("pat@example.test", "Pat")));
-        Assertions.assertEquals("pat@example.test", member.email());
-        await(callAs(user, service -> service.sendInvitation("pat@example.test")));
-        PendingInviteSummary invite = await(callAs(user, service -> service.inviteMember("sam@example.test", "Sam", "todo")));
-        Assertions.assertEquals("sam@example.test", invite.getEmail());
+        OrganizationParticipantIdentity member = await(callAs(user, service -> service.addOrganizationUser("pat@example.test", "Pat")));
+        Assertions.assertEquals("pat@example.test", member.getEmail());
+        Assertions.assertTrue(member.isPending());
+        await(callAs(user, service -> service.sendInvitation("pat@example.test", null)));
+        ApplicationParticipantIdentity appUser = await(callAs(user, service -> service.addApplicationUser("sam@example.test", "Sam", "todo")));
+        Assertions.assertEquals("sam@example.test", appUser.getEmail());
+        Assertions.assertEquals("todo", appUser.getApplicationId());
+        await(callAs(user, service -> service.sendInvitation("sam@example.test", "todo")));
 
         List<SentInvitation> sent = memberInvitations.sent().stream()
                                                      .filter(invitation -> invitation.organizationId().equals(organizationId))
                                                      .toList();
         Assertions.assertEquals(List.of(sentBy(user, "pat@example.test", "Pat", null),
                                         sentBy(user, "pat@example.test", null, null),
-                                        sentBy(user, "sam@example.test", "Sam", "todo")),
+                                        sentBy(user, "sam@example.test", "Sam", "todo"),
+                                        sentBy(user, "sam@example.test", null, "todo")),
                                 sent);
         Assertions.assertEquals("https://summit42.example.test", emailTemplates.getInvitation().getUiBaseUrl());
     }
@@ -87,7 +91,7 @@ public class InvitationServiceTests {
                                                      .build();
 
         ExecutionException e = Assertions.assertThrows(ExecutionException.class,
-                                                       () -> await(callAs(system, service -> service.addMember("pat@example.test", null))));
+                                                       () -> await(callAs(system, service -> service.addOrganizationUser("pat@example.test", null))));
         Assertions.assertInstanceOf(AuthorizationException.class, e.getCause());
     }
 

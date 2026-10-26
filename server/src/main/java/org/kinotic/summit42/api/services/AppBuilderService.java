@@ -31,12 +31,27 @@ public interface AppBuilderService {
      * reason when the app cannot be created. The app is created to the end whether or not the stream is still
      * subscribed.
      *
+     * The app takes its users' passwords from the start, so the people invited on its Users page can accept their
+     * invitations.
+     *
      * @param name        the app's name; fails when the organization already has an application with that name
      * @param description what the user wants the app to do, in their own words, or null; the app's description is
      *                    Claude's one-line summary of it, or null when it is null or cannot be summarized
+     * @param openSignUp  whether anyone may sign up at the app, with an email and a password or through any sign-in
+     *                    provider the app offers; false keeps the app to the people invited on its Users page
      * @return the steps of creating the app, then the created app
      */
-    Flux<AppCreationEvent> createApp(String name, String description);
+    Flux<AppCreationEvent> createApp(String name, String description, boolean openSignUp);
+
+    /**
+     * Sets whether anyone may sign up at the app, on its email and password and on each identity provider its login
+     * offers, so every one of them says the same. Fails while the app offers no way to sign in, and for an id that
+     * names no app of the organization.
+     *
+     * @param applicationId the app's application id
+     * @param openSignUp    true for anyone who signs up, false for the people invited on the app's Users page
+     */
+    Future<Void> setOpenSignUp(String applicationId, boolean openSignUp);
 
     /**
      * Sends the user's message about the app and streams Claude's turn: its reply as

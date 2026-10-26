@@ -4,20 +4,24 @@
       <HeroPitch />
     </template>
 
-    <div v-if="error" class="alert alert--error" role="alert">{{ error }}</div>
+    <div v-if="error" class="alert alert--error" role="alert">
+      {{ error }}
+      <button v-if="providersUnavailable" type="button" class="link-button" @click="loadProviders">Try again</button>
+    </div>
 
     <p v-if="unknown" class="muted">There is no organization named <strong>{{ organizationId }}</strong>.</p>
 
     <template v-else>
-      <ProviderButton v-for="provider in providers"
+      <ProviderButton v-for="provider in oidcProviders"
                       :key="provider.id"
                       :action="organizationLoginUrl(organizationId, provider.id, referer)"
                       :provider="provider.provider"
                       :label="provider.name || providerDisplayName(provider.provider)"
                       verb="Continue" />
-      <div v-if="providers.length > 0" class="divider">or</div>
+      <div v-if="oidcProviders.length > 0 && passwordOffered" class="divider">or</div>
 
-      <form @submit.prevent="signIn">
+      <!-- the login takes a password only while the organization offers one among its providers -->
+      <form v-if="passwordOffered" @submit.prevent="signIn">
         <div class="field">
           <label for="email">Email</label>
           <input id="email" v-model="email" class="input" type="email" autocomplete="email" required />
@@ -58,39 +62,57 @@ import {
   organizationLoginUrl,
   providerDisplayName,
   refererOf,
+  rememberedOrganization,
 } from '@/api/auth'
 import { connect, SESSION } from '@/api/session'
 
-/** One organization's sign-in: the providers it offers, and its members' email and password. */
+/** One organization's sign-in: the providers it offers, and its members' email and password while it takes one. */
 const props = defineProps<{
   organizationId: string
 }>()
+
+const PROVIDERS_UNAVAILABLE = 'Could not load the ways to sign in to this organization. Refresh the page to try again.'
 
 const route = useRoute()
 const router = useRouter()
 
 const providers = ref<LoginProvider[]>([])
 const unknown = ref(false)
+const providersUnavailable = ref(false)
 const email = ref('')
 const password = ref('')
 const signingIn = ref(false)
 const error = ref<string | null>(null)
 
 const referer = computed(() => refererOf(route.query.referer))
+const oidcProviders = computed(() => providers.value.filter(provider => provider.type === 'OIDC'))
+const passwordOffered = computed(() => providers.value.some(provider => provider.type === 'PASSWORD'))
 
 onMounted(async () => {
   if (SESSION.connected) {
     await router.replace(referer.value ?? '/')
     return
   }
+  await loadProviders()
+})
+
+// the page offers only what the list says the organization offers, so a list that cannot be read is tried again
+async function loadProviders() {
+  error.value = null
+  providersUnavailable.value = false
   try {
     const offered = await fetchOrganizationProviders(props.organizationId)
     unknown.value = offered === null
     providers.value = offered ?? []
+    // a remembered organization that no longer exists would send every visit to /login back here
+    if (unknown.value && props.organizationId === rememberedOrganization()) {
+      forgetOrganization()
+    }
   } catch {
-    // the password form still works without the provider buttons
+    error.value = PROVIDERS_UNAVAILABLE
+    providersUnavailable.value = true
   }
-})
+}
 
 // the remembered organization would send /login straight back here
 function useAnother() {

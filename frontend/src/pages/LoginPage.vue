@@ -57,6 +57,7 @@ import HeroPitch from '@/components/HeroPitch.vue'
 import ProviderButton from '@/components/ProviderButton.vue'
 import {
   authErrorMessage,
+  authErrorOf,
   fetchOrganizationChoices,
   fetchSocialProviders,
   GITHUB_PROVIDER,
@@ -101,10 +102,10 @@ onMounted(async () => {
 // the gateway's redirects land here with ?error=<code>; the error is cleared so a refresh does not repeat it, and the
 // referer is kept for the sign-in started next
 async function consumeError() {
-  const code = typeof route.query.error === 'string' ? route.query.error : null
-  if (code) {
+  const failed = authErrorOf(route.query)
+  if (failed) {
     await router.replace({ query: referer.value ? { referer: referer.value } : {} })
-    if (code === 'multiple_organizations') {
+    if (failed.code === 'multiple_organizations') {
       try {
         choices.value = await fetchOrganizationChoices()
       } catch {
@@ -112,7 +113,7 @@ async function consumeError() {
       }
     }
     if (choices.value.length === 0) {
-      error.value = authErrorMessage(code)
+      error.value = authErrorMessage(failed.code, failed.provider)
     }
   }
 }

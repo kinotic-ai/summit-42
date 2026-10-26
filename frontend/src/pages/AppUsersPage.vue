@@ -16,32 +16,28 @@
 
       <section class="panel panel--flush glass">
         <div class="table-wrap">
-          <table v-if="users.length + invites.length > 0" class="table">
+          <table v-if="users.length > 0" class="table">
             <thead>
               <tr><th>User</th><th>Status</th><th>Since</th><th /></tr>
             </thead>
             <tbody>
               <tr v-for="user in users" :key="user.id!">
-                <td>{{ user.displayName || user.email }}<span v-if="user.displayName" class="table__sub">{{ user.email }}</span></td>
-                <td><span :class="['chip', user.enabled ? 'chip--live' : 'chip--danger']">{{ user.enabled ? 'Active' : 'Disabled' }}</span></td>
-                <td class="table__when">{{ formatDate(user.created) }}</td>
                 <td>
-                  <div class="table__actions">
+                  {{ user.displayName || user.email }}
+                  <span class="table__sub">{{ user.pending ? pendingNote(user) : user.email }}</span>
+                </td>
+                <td><span :class="['chip', statusOf(user).class]">{{ statusOf(user).text }}</span></td>
+                <td class="table__when">{{ user.pending ? '—' : formatDate(user.created) }}</td>
+                <td>
+                  <div v-if="user.pending" class="table__actions">
+                    <button type="button" class="btn btn--secondary btn--small" :disabled="busy === user.id" @click="resend(user)">Resend</button>
+                    <button type="button" class="btn btn--danger btn--small" :disabled="busy === user.id" @click="remove(user)">Remove</button>
+                  </div>
+                  <div v-else class="table__actions">
                     <button type="button" class="btn btn--secondary btn--small" :disabled="busy === user.id" @click="setEnabled(user.id!, !user.enabled)">
                       {{ user.enabled ? 'Disable' : 'Enable' }}
                     </button>
-                    <button type="button" class="btn btn--danger btn--small" :disabled="busy === user.id" @click="remove(user.id!, user.email)">Remove</button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-for="invite in invites" :key="invite.id!">
-                <td>{{ invite.displayName || invite.email }}<span class="table__sub">{{ invite.invitedByName ? `Invited by ${invite.invitedByName}` : invite.email }}</span></td>
-                <td><span class="chip chip--info">Invited</span></td>
-                <td class="table__when">{{ formatDate(invite.created) }}</td>
-                <td>
-                  <div class="table__actions">
-                    <button type="button" class="btn btn--secondary btn--small" :disabled="busy === invite.id" @click="resend(invite)">Resend</button>
-                    <button type="button" class="btn btn--danger btn--small" :disabled="busy === invite.id" @click="cancel(invite.id!)">Cancel</button>
+                    <button type="button" class="btn btn--danger btn--small" :disabled="busy === user.id" @click="remove(user)">Remove</button>
                   </div>
                 </td>
               </tr>
@@ -57,7 +53,10 @@
                   :subtitle="`They get an email with a link to join ${app.name}.`"
                   :invite="invite"
                   @close="inviting = false">
-      <p class="muted invite-note">They set a password from the email, then sign in to {{ app.name }} at its link.</p>
+      <p class="muted invite-note">
+        They set a password from the email, or sign in to {{ app.name }} through one of its sign-in providers, and use it
+        at its link from then on.
+      </p>
     </InviteDrawer>
   </main>
 </template>
@@ -72,7 +71,7 @@ import type { BuilderApp } from '@/api/appBuilder'
 import { INVITATIONS } from '@/api/invitations'
 import { errorText, formatDate } from '@/api/format'
 
-/** The people who can sign in to an app, and the invitations they have not accepted yet. */
+/** The people who can sign in to an app, each pending until they first sign in, and the invitations they were sent. */
 const props = defineProps<{
   app: BuilderApp
 }>()
@@ -105,6 +104,23 @@ async function load() {
   }
 }
 
+function statusOf(user: ApplicationParticipantIdentity): { text: string; class: string } {
+  let ret: { text: string; class: string }
+  if (user.pending) {
+    ret = { text: 'Invited', class: 'chip--info' }
+  } else if (user.enabled) {
+    ret = { text: 'Active', class: 'chip--live' }
+  } else {
+    ret = { text: 'Disabled', class: 'chip--danger' }
+  }
+  return ret
+}
+
+function pendingNote(user: ApplicationParticipantIdentity): string {
+  const sent = invites.value.find(invite => invite.email.toLowerCase() === user.email.toLowerCase())?.created
+  return sent ? `Invitation sent ${formatDate(sent)}` : user.email
+}
+
 async function act(id: string, action: () => Promise<unknown>, fallback: string) {
   busy.value = id
   error.value = null
@@ -119,7 +135,7 @@ async function act(id: string, action: () => Promise<unknown>, fallback: string)
 }
 
 async function invite(email: string, displayName: string | null) {
-  await INVITATIONS.inviteMember(email, displayName, props.app.applicationId)
+  await INVITATIONS.addApplicationUser(email, displayName, props.app.applicationId)
   await load()
 }
 
@@ -127,22 +143,18 @@ function setEnabled(id: string, enabled: boolean) {
   void act(id, () => Kinotic.members.setMemberEnabled(id, enabled), 'Could not change the user.')
 }
 
-function remove(id: string, email: string) {
-  if (window.confirm(`Remove ${email}? They can no longer sign in to ${props.app.name}.`)) {
-    void act(id, () => Kinotic.members.removeMember(id), 'Could not remove the user.')
+function resend(user: ApplicationParticipantIdentity) {
+  void act(user.id!, () => INVITATIONS.sendInvitation(user.email, props.app.applicationId), 'Could not resend the invitation.')
+}
+
+// removing a pending user cancels the invitation they never accepted
+function remove(user: ApplicationParticipantIdentity) {
+  const question = user.pending
+    ? `Remove ${user.displayName || user.email}? Nobody has signed in as them yet, so their invitation stops working.`
+    : `Remove ${user.email}? They can no longer sign in to ${props.app.name}.`
+  if (window.confirm(question)) {
+    void act(user.id!, () => Kinotic.members.removeMember(user.id!), 'Could not remove the user.')
   }
-}
-
-// an application invitation has no resend of its own, so it is cancelled and sent again
-function resend(pending: PendingInviteSummary) {
-  void act(pending.id!, async () => {
-    await Kinotic.members.cancelInvite(pending.id!)
-    await INVITATIONS.inviteMember(pending.email, pending.displayName, props.app.applicationId)
-  }, 'Could not resend the invitation.')
-}
-
-function cancel(id: string) {
-  void act(id, () => Kinotic.members.cancelInvite(id), 'Could not cancel the invitation.')
 }
 </script>
 

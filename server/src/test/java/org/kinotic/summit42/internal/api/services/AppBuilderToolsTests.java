@@ -58,10 +58,10 @@ public class AppBuilderToolsTests {
 
     @Test
     public void testReadKinoticDocsListsThePagesForAnUnknownPage() {
-        String answer = tools.readKinoticDocs("05.persistence/99.no-such-page.md", contextOf(newTurn()));
+        String answer = tools.readKinoticDocs("03.apps/05.persistence/99.no-such-page.md", contextOf(newTurn()));
 
         Assertions.assertTrue(answer.startsWith("Unknown page. The pages are:"), answer);
-        Assertions.assertTrue(answer.contains("\n05.persistence/02.defining-entities.md\n"), answer);
+        Assertions.assertTrue(answer.contains("\n03.apps/05.persistence/02.defining-entities.md\n"), answer);
     }
 
     private static BuilderTurn newTurn() {

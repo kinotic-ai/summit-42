@@ -2,41 +2,45 @@ package org.kinotic.summit42.api.services;
 
 import io.vertx.core.Future;
 import org.kinotic.core.api.annotations.Publish;
-import org.kinotic.domain.api.model.security.OrganizationMember;
-import org.kinotic.management.api.model.PendingInviteSummary;
+import org.kinotic.domain.api.model.security.identity.ApplicationParticipantIdentity;
+import org.kinotic.domain.api.model.security.identity.OrganizationParticipantIdentity;
 
 /**
- * The invitations a signed-in user sends into their organization and its apps. Each is sent in the user's name and
- * emailed with Summit 42's invitation template, whose link opens Summit 42.
+ * The people a signed-in user adds to their organization and its apps, each emailed an invitation in the user's name
+ * with Summit 42's invitation template, whose link opens Summit 42.
  */
 @Publish
 public interface InvitationService {
 
     /**
-     * Adds a person to the user's organization by email and emails them an invitation. Fails for an address that is
-     * already a member or one an invitation is already pending for.
+     * Adds a person to the user's organization by email and emails them an invitation, which they accept with a
+     * password while the organization takes one, or by signing in through one of its providers under the same
+     * address. Fails for an address that is already a member.
      *
      * @param email       the address the person signs in with
      * @param displayName the person's name, or null
-     * @return the member as listed, pending until they first sign in; for an address that already has an account, a
-     *         pending member with no id yet, listed once the invitation is accepted
+     * @return the member as listed, pending until they first sign in
      */
-    Future<OrganizationMember> addMember(String email, String displayName);
+    Future<OrganizationParticipantIdentity> addOrganizationUser(String email, String displayName);
 
     /**
-     * Emails a pending member of the user's organization their invitation again, or a first one for a member added
-     * without. Fails for an address that is not a pending member's.
-     */
-    Future<Void> sendInvitation(String email);
-
-    /**
-     * Invites someone into one of the organization's apps by email; accepting creates their account in the app.
-     * Fails if the email already has an account in the app or an invitation is already pending for it.
+     * Adds a person to one of the organization's apps by email and emails them an invitation, which they accept with
+     * a password, or by signing in to the app through one of its providers under the same address. Fails for an
+     * address that already has a user in the app, and for an app whose login offers no way to accept the invitation.
      *
-     * @param email         where to send the invitation
-     * @param displayName   the invitee's name, or null
+     * @param email         the address the person signs in with
+     * @param displayName   the person's name, or null
      * @param applicationId the app's Kinotic application
-     * @return the pending invitation
+     * @return the user as listed, pending until they first sign in
      */
-    Future<PendingInviteSummary> inviteMember(String email, String displayName, String applicationId);
+    Future<ApplicationParticipantIdentity> addApplicationUser(String email, String displayName, String applicationId);
+
+    /**
+     * Emails a pending member of the user's organization, or a pending user of one of its apps, their invitation
+     * again. Fails for an address that is not a pending member's or user's.
+     *
+     * @param email         the pending member's or user's address
+     * @param applicationId the app whose user is invited, or null for a member of the organization
+     */
+    Future<Void> sendInvitation(String email, String applicationId);
 }

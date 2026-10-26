@@ -81,30 +81,31 @@ public class AppBuilderTools {
     private static final int MAX_RESULT_LENGTH = 20_000;
     private static final DateTimeFormatter LOG_TIME = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneOffset.UTC);
     private static final String DOCS_HOST = "raw.githubusercontent.com";
-    private static final String DOCS_PATH = "/kinotic-ai/kinotic/develop/website/content/01.apps/";
+    private static final String DOCS_PATH = "/kinotic-ai/kinotic/develop/website/content/";
     private static final List<String> DOC_PAGES = List.of(
-            "01.introduction.md",
-            "02.quick-start.md",
-            "03.application-structure/01.overview.md",
-            "03.application-structure/02.applications-and-projects.md",
-            "03.application-structure/03.artifact-types.md",
-            "04.services/01.overview.md",
-            "04.services/02.publishing-services.md",
-            "04.services/03.service-proxies.md",
-            "04.services/04.streaming.md",
-            "05.persistence/01.overview.md",
-            "05.persistence/02.defining-entities.md",
-            "05.persistence/03.entity-decorators.md",
-            "05.persistence/04.crud-operations.md",
-            "05.persistence/05.named-queries.md",
-            "05.persistence/06.multi-tenancy.md",
-            "05.persistence/07.migrations.md",
-            "06.security/01.authentication.md",
-            "07.deployment/01.workflow.md",
-            "07.deployment/02.environments.md",
-            "07.deployment/03.push-to-deploy.md",
-            "09.reference/01.decorators.md",
-            "09.reference/02.migration-sql-grammar.md");
+            "01.getting-started/01.introduction.md",
+            "01.getting-started/02.quick-start.md",
+            "03.apps/03.application-structure/01.overview.md",
+            "03.apps/03.application-structure/02.applications-and-projects.md",
+            "03.apps/03.application-structure/03.artifact-types.md",
+            "03.apps/04.services/01.overview.md",
+            "03.apps/04.services/02.publishing-services.md",
+            "03.apps/04.services/03.service-proxies.md",
+            "03.apps/04.services/04.streaming.md",
+            "03.apps/05.persistence/01.overview.md",
+            "03.apps/05.persistence/02.defining-entities.md",
+            "03.apps/05.persistence/03.entity-decorators.md",
+            "03.apps/05.persistence/04.crud-operations.md",
+            "03.apps/05.persistence/05.named-queries.md",
+            "03.apps/05.persistence/06.multi-tenancy.md",
+            "03.apps/05.persistence/07.migrations.md",
+            "03.apps/06.security/01.authentication.md",
+            "03.apps/07.deployment/01.workflow.md",
+            "03.apps/07.deployment/02.environments.md",
+            "03.apps/07.deployment/03.push-to-deploy.md",
+            "03.apps/08.cli-reference.md",
+            "03.apps/09.reference/01.decorators.md",
+            "03.apps/09.reference/02.migration-sql-grammar.md");
 
     private final Vertx vertx;
     private final SecurityContext securityContext;
@@ -116,6 +117,7 @@ public class AppBuilderTools {
     private final ProjectRepoCredentialService repoCredentialService;
     private final GitHubRepoClient gitHubRepoClient;
     private final WebClient webClient;
+    private final AppSignInService appSignInService;
 
     @Tool(description = "Lists the path of every file in the app's repository on its default branch.")
     public String listFiles(ToolContext toolContext) {
@@ -250,19 +252,45 @@ public class AppBuilderTools {
         });
     }
 
-    @Tool(description = "Reads a page of Kinotic's documentation for building apps. Pages: " + "01.introduction.md, "
-                        + "02.quick-start.md, 03.application-structure/*, 04.services/*, 05.persistence/*, "
-                        + "06.security/01.authentication.md, 07.deployment/*, 09.reference/01.decorators.md, "
-                        + "09.reference/02.migration-sql-grammar.md; call it with an unknown page to list every page.")
-    public String readKinoticDocs(@ToolParam(description = "The page's path, such as 05.persistence/02.defining-entities.md")
+    @Tool(description = """
+            Says who can sign in to the app and how: only the people the user invites on the app's Users page in \
+            Summit 42, or anyone who signs up, and whether with an email and a password, through the app's sign-in \
+            providers, or not at all yet.""")
+    public String readSignIn(ToolContext toolContext) {
+        return act(toolContext, BuildStepType.READING, "Checking who can sign in",
+                   turn -> await(appSignInService.find(turn.getParticipant(),
+                                                       turn.getSession().getApplicationKey().applicationId())).describe());
+    }
+
+    @Tool(description = """
+            Sets who can sign in to the app. With openSignUp true, anyone can sign up at the app with an email and a \
+            password or through any sign-in provider the app offers; with false, only the people the user invites on \
+            the app's Users page in Summit 42 sign in. Call it when the user says who should be able to sign in. It \
+            answers how people sign in from then on.""")
+    public String configureSignIn(@ToolParam(description = "true to let anyone sign up, false to keep the app to the people invited")
+                                  boolean openSignUp,
+                                  ToolContext toolContext) {
+        return act(toolContext, BuildStepType.CONFIGURING, openSignUp ? "Letting anyone sign up" : "Keeping sign-in to the people invited",
+                   turn -> await(appSignInService.setOpenSignUp(turn.getParticipant(),
+                                                                turn.getSession().getApplicationKey().applicationId(),
+                                                                openSignUp)).describe());
+    }
+
+    @Tool(description = "Reads a page of Kinotic's documentation for building apps. Pages: "
+                        + "01.getting-started/01.introduction.md, 01.getting-started/02.quick-start.md, "
+                        + "03.apps/03.application-structure/*, 03.apps/04.services/*, 03.apps/05.persistence/*, "
+                        + "03.apps/06.security/01.authentication.md, 03.apps/07.deployment/*, 03.apps/08.cli-reference.md, "
+                        + "03.apps/09.reference/01.decorators.md, 03.apps/09.reference/02.migration-sql-grammar.md; "
+                        + "call it with an unknown page to list every page.")
+    public String readKinoticDocs(@ToolParam(description = "The page's path, such as 03.apps/05.persistence/02.defining-entities.md")
                                   String page,
                                   ToolContext toolContext) {
         String ret;
         if (!DOC_PAGES.contains(page)) {
             ret = "Unknown page. The pages are:\n" + String.join("\n", DOC_PAGES);
         } else {
-            // 05.persistence/02.defining-entities.md reads as "persistence / defining entities"
-            String title = page.replaceAll("\\d+\\.", "").replace(".md", "").replace("/", " / ").replace('-', ' ');
+            // 03.apps/05.persistence/02.defining-entities.md reads as "persistence / defining entities"
+            String title = page.replaceAll("^[^/]+/", "").replaceAll("\\d+\\.", "").replace(".md", "").replace("/", " / ").replace('-', ' ');
             ret = act(toolContext, BuildStepType.READING, "Reading Kinotic's docs on " + title,
                       turn -> await(webClient.get(443, DOCS_HOST, DOCS_PATH + page)
                                              .ssl(true)

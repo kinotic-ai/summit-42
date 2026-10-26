@@ -4,9 +4,9 @@ import io.vertx.core.Future;
 import org.kinotic.core.api.annotations.Proxy;
 import org.kinotic.core.api.annotations.Version;
 import org.kinotic.core.api.annotations.Zone;
-import org.kinotic.domain.api.model.security.OrganizationMember;
+import org.kinotic.domain.api.model.security.identity.ApplicationParticipantIdentity;
+import org.kinotic.domain.api.model.security.identity.OrganizationParticipantIdentity;
 import org.kinotic.domain.api.utils.DomainUtil;
-import org.kinotic.management.api.model.PendingInviteSummary;
 
 /**
  * Summit 42's {@code InvitationService}, called over Kinotic RPC the way the management gateway calls it for the
@@ -17,9 +17,9 @@ import org.kinotic.management.api.model.PendingInviteSummary;
 @Version("1.0.0")
 public interface InvitationServiceProxy {
 
-    Future<OrganizationMember> addMember(String email, String displayName);
+    Future<OrganizationParticipantIdentity> addOrganizationUser(String email, String displayName);
 
-    Future<Void> sendInvitation(String email);
+    Future<ApplicationParticipantIdentity> addApplicationUser(String email, String displayName, String applicationId);
 
-    Future<PendingInviteSummary> inviteMember(String email, String displayName, String applicationId);
+    Future<Void> sendInvitation(String email, String applicationId);
 }
