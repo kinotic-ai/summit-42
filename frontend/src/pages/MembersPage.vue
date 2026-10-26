@@ -32,11 +32,11 @@
                   </div>
                 </td>
                 <td><span :class="['chip', statusOf(member).class]">{{ statusOf(member).text }}</span></td>
-                <td class="table__when">{{ member.pending ? '—' : formatDate(member.joined) }}</td>
+                <td class="table__when">{{ member.pending ? '—' : formatDate(member.created) }}</td>
                 <td>
                   <div v-if="member.pending" class="table__actions">
                     <button type="button" class="btn btn--secondary btn--small" :disabled="busy === member.email" @click="resend(member)">Resend</button>
-                    <button v-if="inviteFor(member)" type="button" class="btn btn--danger btn--small" :disabled="busy === member.email" @click="cancel(member)">Cancel</button>
+                    <button type="button" class="btn btn--danger btn--small" :disabled="busy === member.email" @click="remove(member)">Remove</button>
                   </div>
                   <div v-else-if="!isSelf(member) && member.id" class="table__actions">
                     <button type="button" class="btn btn--secondary btn--small" :disabled="busy === member.email" @click="setEnabled(member)">
@@ -66,19 +66,19 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { Kinotic, Pageable } from '@kinotic-ai/core'
-import type { OrganizationMember, PendingInviteSummary } from '@kinotic-ai/management-api'
+import type { OrganizationParticipantIdentity, PendingInviteSummary } from '@kinotic-ai/management-api'
 import AppIcon from '@/components/AppIcon.vue'
 import InviteDrawer from '@/components/InviteDrawer.vue'
 import { INVITATIONS } from '@/api/invitations'
 import { errorText, formatDate, initialsOf } from '@/api/format'
 import { SESSION } from '@/api/session'
 
-/** The organization's members, and the people invited to join it. */
+/** The organization's members: its users, each pending until they first sign in, and the invitations they were sent. */
 const MAX_ROWS = 200
 
 const loading = ref(true)
 const error = ref<string | null>(null)
-const members = ref<OrganizationMember[]>([])
+const members = ref<OrganizationParticipantIdentity[]>([])
 const invites = ref<PendingInviteSummary[]>([])
 const inviting = ref(false)
 const busy = ref<string | null>(null)
@@ -102,11 +102,11 @@ async function load() {
   }
 }
 
-function isSelf(member: OrganizationMember): boolean {
+function isSelf(member: OrganizationParticipantIdentity): boolean {
   return SESSION.email !== null && member.email.toLowerCase() === SESSION.email.toLowerCase()
 }
 
-function statusOf(member: OrganizationMember): { text: string; class: string } {
+function statusOf(member: OrganizationParticipantIdentity): { text: string; class: string } {
   let ret: { text: string; class: string }
   if (member.pending) {
     ret = { text: 'Invited', class: 'chip--info' }
@@ -118,16 +118,16 @@ function statusOf(member: OrganizationMember): { text: string; class: string } {
   return ret
 }
 
-function inviteFor(member: OrganizationMember): PendingInviteSummary | undefined {
+function inviteFor(member: OrganizationParticipantIdentity): PendingInviteSummary | undefined {
   return invites.value.find(invite => invite.email.toLowerCase() === member.email.toLowerCase())
 }
 
-function pendingNote(member: OrganizationMember): string {
+function pendingNote(member: OrganizationParticipantIdentity): string {
   const sent = inviteFor(member)?.created
   return sent ? `Invitation sent ${formatDate(sent)}` : member.email
 }
 
-async function act(member: OrganizationMember, action: () => Promise<unknown>, fallback: string) {
+async function act(member: OrganizationParticipantIdentity, action: () => Promise<unknown>, fallback: string) {
   busy.value = member.email
   error.value = null
   try {
@@ -141,27 +141,23 @@ async function act(member: OrganizationMember, action: () => Promise<unknown>, f
 }
 
 async function invite(email: string, displayName: string | null) {
-  await INVITATIONS.addMember(email, displayName)
+  await INVITATIONS.addOrganizationUser(email, displayName)
   await load()
 }
 
-function resend(member: OrganizationMember) {
-  void act(member, () => INVITATIONS.sendInvitation(member.email), 'Could not resend the invitation.')
+function resend(member: OrganizationParticipantIdentity) {
+  void act(member, () => INVITATIONS.sendInvitation(member.email, null), 'Could not resend the invitation.')
 }
 
-function cancel(member: OrganizationMember) {
-  const pending = inviteFor(member)
-  if (pending?.id) {
-    void act(member, () => Kinotic.members.cancelInvite(pending.id!), 'Could not cancel the invitation.')
-  }
-}
-
-function setEnabled(member: OrganizationMember) {
+function setEnabled(member: OrganizationParticipantIdentity) {
   void act(member, () => Kinotic.members.setMemberEnabled(member.id!, !member.enabled), 'Could not change the member.')
 }
 
-function remove(member: OrganizationMember) {
-  if (window.confirm(`Remove ${member.displayName || member.email} from the organization?`)) {
+function remove(member: OrganizationParticipantIdentity) {
+  const question = member.pending
+    ? `Remove ${member.displayName || member.email}? Nobody has signed in as them yet, so their invitation stops working.`
+    : `Remove ${member.displayName || member.email} from the organization?`
+  if (window.confirm(question)) {
     void act(member, () => Kinotic.members.removeMember(member.id!), 'Could not remove the member.')
   }
 }

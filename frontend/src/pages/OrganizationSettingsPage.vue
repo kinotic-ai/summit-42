@@ -34,43 +34,7 @@
         </div>
       </section>
 
-      <section class="panel panel--flush glass">
-        <div class="panel__head">
-          <div class="providers__intro">
-            <h2 class="panel__title">Sign-in providers</h2>
-            <p class="muted panel__note">
-              Members sign in with GitHub or their email and password. Add your own identity provider, such as Okta,
-              Microsoft Entra ID or Google Workspace, and they can sign in with it too.
-            </p>
-          </div>
-          <button type="button" class="btn btn--small" @click="openDrawer(null)"><AppIcon name="plus" :stroke-width="2.25" /> Add provider</button>
-        </div>
-        <div class="table-wrap">
-          <table v-if="providers.length > 0" class="table">
-            <thead><tr><th>Name</th><th>Provider</th><th>Status</th><th /></tr></thead>
-            <tbody>
-              <tr v-for="provider in providers" :key="provider.id!">
-                <td>
-                  <button type="button" class="link-button" @click="openDrawer(provider)">{{ provider.name }}</button>
-                  <span v-if="provider.providerAccount" class="table__sub mono">{{ provider.providerAccount }}</span>
-                </td>
-                <td class="muted">{{ providerDisplayName(provider.provider) }}</td>
-                <td><span :class="['chip', provider.enabled ? 'chip--live' : '']">{{ provider.enabled ? 'Offered' : 'Off' }}</span></td>
-                <td>
-                  <div class="table__actions">
-                    <button type="button" class="btn btn--secondary btn--small" :disabled="busy === provider.id" @click="openDrawer(provider)">Edit</button>
-                    <button type="button" class="btn btn--secondary btn--small" :disabled="busy === provider.id" @click="setEnabled(provider)">
-                      {{ provider.enabled ? 'Turn off' : 'Turn on' }}
-                    </button>
-                    <button type="button" class="btn btn--danger btn--small" :disabled="busy === provider.id" @click="remove(provider)">Delete</button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="table__empty">{{ loading ? 'Loading…' : 'No identity providers of your own yet.' }}</p>
-        </div>
-      </section>
+      <SignInProvidersPanel :application-id="null" />
 
       <section class="panel glass">
         <h2 class="panel__title">Sign-in page</h2>
@@ -78,37 +42,25 @@
         <CopyableUrl :url="signInUrl" />
       </section>
     </div>
-
-    <SignInProviderDrawer v-if="drawerOpen"
-                          :configuration="editing"
-                          @saved="load"
-                          @close="drawerOpen = false" />
   </main>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Kinotic, Pageable } from '@kinotic-ai/core'
-import { OidcConfigurationType, type GitHubAppInstallation, type OwnedOidcConfiguration } from '@kinotic-ai/management-api'
+import { Kinotic } from '@kinotic-ai/core'
+import type { GitHubAppInstallation } from '@kinotic-ai/management-api'
 import AppIcon from '@/components/AppIcon.vue'
 import CopyableUrl from '@/components/CopyableUrl.vue'
-import SignInProviderDrawer from '@/components/SignInProviderDrawer.vue'
-import { providerDisplayName } from '@/api/auth'
+import SignInProvidersPanel from '@/components/SignInProvidersPanel.vue'
 import { GITHUB_CALLBACK_PATH } from '@/api/github'
 import { errorText } from '@/api/format'
 import { SESSION } from '@/api/session'
 
-/** The organization's GitHub link, the identity providers its members sign in with, and its sign-in page. */
-const MAX_PROVIDERS = 100
-
+/** The organization's GitHub link, the sign-in providers its members sign in with, and its sign-in page. */
 const loading = ref(true)
 const error = ref<string | null>(null)
 const installation = ref<GitHubAppInstallation | null>(null)
-const providers = ref<OwnedOidcConfiguration[]>([])
 const linking = ref(false)
-const busy = ref<string | null>(null)
-const drawerOpen = ref(false)
-const editing = ref<OwnedOidcConfiguration | null>(null)
 
 const signInUrl = computed(() => `${window.location.origin}/login/${encodeURIComponent(SESSION.organizationId ?? '')}`)
 
@@ -130,12 +82,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    const [found, configurations] = await Promise.all([
-      Kinotic.githubAppInstallations.findForCurrentOrg(),
-      Kinotic.ownedOidcConfigurations.findAll(Pageable.create(0, MAX_PROVIDERS)),
-    ])
-    installation.value = found
-    providers.value = (configurations.content ?? []).filter(configuration => configuration.type === OidcConfigurationType.ORGANIZATION)
+    installation.value = await Kinotic.githubAppInstallations.findForCurrentOrg()
   } catch (err) {
     error.value = errorText(err, 'Could not load the organization settings.')
   } finally {
@@ -165,36 +112,6 @@ async function unlink() {
     error.value = errorText(err, 'Could not unlink GitHub.')
   } finally {
     linking.value = false
-  }
-}
-
-function openDrawer(provider: OwnedOidcConfiguration | null) {
-  editing.value = provider
-  drawerOpen.value = true
-}
-
-async function act(provider: OwnedOidcConfiguration, action: () => Promise<unknown>, fallback: string) {
-  busy.value = provider.id!
-  error.value = null
-  try {
-    await action()
-    await load()
-  } catch (err) {
-    error.value = errorText(err, fallback)
-  } finally {
-    busy.value = null
-  }
-}
-
-// saved without a secret, so the one held stays as it is
-function setEnabled(provider: OwnedOidcConfiguration) {
-  void act(provider, () => Kinotic.ownedOidcConfigurations.save({ ...provider, enabled: !provider.enabled }, null),
-           'Could not change the provider.')
-}
-
-function remove(provider: OwnedOidcConfiguration) {
-  if (window.confirm(`Delete ${provider.name}? Sign-ins through it stop at once, and its client secret is deleted.`)) {
-    void act(provider, () => Kinotic.ownedOidcConfigurations.deleteById(provider.id!), 'Could not delete the provider.')
   }
 }
 </script>
@@ -251,10 +168,6 @@ function remove(provider: OwnedOidcConfiguration) {
   font-size: 0.875rem;
 }
 
-.providers__intro {
-  flex: 1 1 24rem;
-  max-width: 44rem;
-}
 
 .sign-in__note {
   margin-bottom: 0.9rem;

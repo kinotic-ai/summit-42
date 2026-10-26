@@ -12,6 +12,9 @@ import org.kinotic.core.api.service.ServiceIdentifier;
 import org.kinotic.domain.api.model.Application;
 import org.kinotic.domain.api.model.ApplicationKey;
 import org.kinotic.domain.api.model.TenantManagement;
+import org.kinotic.domain.api.model.security.OidcProviderType;
+import org.kinotic.domain.api.model.security.OwnedOidcConfiguration;
+import org.kinotic.domain.api.model.security.PasswordConfiguration;
 import org.kinotic.domain.api.model.security.participant.OrganizationParticipant;
 import org.kinotic.domain.api.utils.DomainUtil;
 import org.kinotic.management.api.model.Project;
@@ -40,6 +43,8 @@ import org.kinotic.summit42.fakes.FakeGitHub;
 import org.kinotic.summit42.fakes.FakeLlmConfigurationService;
 import org.kinotic.summit42.fakes.FakeLogService;
 import org.kinotic.summit42.fakes.FakeMicroserviceDeploymentService;
+import org.kinotic.summit42.fakes.FakeOwnedOidcConfigurationService;
+import org.kinotic.summit42.fakes.FakeOwnedPasswordConfigurationService;
 import org.kinotic.summit42.fakes.FakeProjectService;
 import org.kinotic.summit42.fakes.FakeRecipeService;
 import org.kinotic.summit42.fakes.RecipeService;
@@ -62,6 +67,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
@@ -76,6 +82,10 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     private FakeApplicationService applicationService;
     @Autowired
     private FakeProjectService projectService;
+    @Autowired
+    private FakeOwnedPasswordConfigurationService passwordConfigurationService;
+    @Autowired
+    private FakeOwnedOidcConfigurationService oidcConfigurationService;
     @Autowired
     private FakeUiDeploymentService uiDeploymentService;
     @Autowired
@@ -163,6 +173,32 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
         Assertions.assertEquals(organizationId(), project.getOrganizationId());
         Assertions.assertEquals(ProjectType.TYPESCRIPT, project.getSourceOfTruth());
         Assertions.assertTrue(project.isRepoPrivate());
+        // the app takes its users' passwords, for the people invited to it
+        PasswordConfiguration password = passwordOf(application.getId());
+        Assertions.assertTrue(password.isEnabled());
+        Assertions.assertFalse(password.isCreateUserOnSignIn());
+        Assertions.assertNull(password.getTenantId());
+    }
+
+    @Test
+    public void testCreateAppLetsAnyoneSignUpWhenAsked() throws Exception {
+        BuilderApp app = await(createAppAs(participant, "Shop", null, true)).getLast().getApp();
+
+        PasswordConfiguration password = passwordOf(app.getApplicationId());
+        Assertions.assertTrue(password.isEnabled());
+        Assertions.assertTrue(password.isCreateUserOnSignIn());
+    }
+
+    @Test
+    public void testCreateAppDeletesTheApplicationWhenItsSignInCannotBeSetUp() {
+        passwordConfigurationService.failSaves(organizationId());
+
+        ExecutionException e = Assertions.assertThrows(ExecutionException.class,
+                                                       () -> await(createAppAs(participant, "Todo", null)));
+
+        Assertions.assertEquals("The password configuration could not be saved", e.getCause().getMessage());
+        Assertions.assertTrue(applicationService.applicationsOf(organizationId()).isEmpty());
+        Assertions.assertTrue(projectService.projectsOf(organizationId()).isEmpty());
     }
 
     @Test
@@ -487,6 +523,43 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     @Test
+    public void testChatTellsClaudeWhoCanSignInAndConfigureSignInChangesIt() {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        passwordConfigurationService.add(organizationId(), "todo", false);
+        oidcConfigurationService.add(organizationId(), "todo", "Google", OidcProviderType.GOOGLE);
+        oidcConfigurationService.add(organizationId(), "other", "Okta", OidcProviderType.OKTA);
+        anthropic.replyWithToolCall("configureSignIn", new JsonObject().put("openSignUp", true));
+        anthropic.replyWithText("Anyone can sign up now");
+
+        List<BuildEvent> events = chat("todo", "Let my customers sign up");
+
+        String system = systemOf(anthropic.requests().getFirst());
+        Assertions.assertTrue(system.contains("Only the people the user invites on the app's Users page in Summit 42 can sign in,"
+                                              + " with an email and a password or through Google."), system);
+        Assertions.assertTrue(events.stream().anyMatch(event -> event.getStepType() == BuildStepType.CONFIGURING
+                                                                && "Letting anyone sign up".equals(event.getText())), events.toString());
+        Assertions.assertEquals("Anyone can sign up at the app with an email and a password or through Google.",
+                                Json.decodeValue(toolResultOf(anthropic.requests().getLast())));
+        Assertions.assertTrue(passwordOf("todo").isCreateUserOnSignIn());
+        // every provider of the app's login says the same, and another app's is left alone
+        Map<String, Boolean> signsUp = oidcConfigurationService.configurationsOf(organizationId()).values().stream()
+                                                               .collect(Collectors.toMap(OwnedOidcConfiguration::getName,
+                                                                                                          OwnedOidcConfiguration::isCreateUserOnSignIn));
+        Assertions.assertEquals(Map.of("Google", true, "Okta", false), signsUp);
+    }
+
+    @Test
+    public void testChatTellsClaudeWhenNobodyCanSignInYet() {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        anthropic.replyWithText("Done");
+
+        chat("todo", "Build a todo app");
+
+        String system = systemOf(anthropic.requests().getFirst());
+        Assertions.assertTrue(system.contains("Nobody can sign in to the app yet: the user adds a way to sign in on the app's Settings page in Summit 42."), system);
+    }
+
+    @Test
     public void testChatListsTheKinoticSkillsWithADescription() {
         projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
         anthropic.replyWithText("Done");
@@ -747,6 +820,14 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
 
     private String organizationId() {
         return participant.getOrganizationId();
+    }
+
+    // the email and password of the organization's app
+    private PasswordConfiguration passwordOf(String applicationId) {
+        PasswordConfiguration ret = passwordConfigurationService.configurationsOf(organizationId())
+                                                                .get(PasswordConfiguration.idOf(organizationId(), applicationId, null));
+        Assertions.assertNotNull(ret, "The app " + applicationId + " takes no password");
+        return ret;
     }
 
     // the text of a turn's readSkill call with the input given, which Spring AI sends Claude as a JSON string

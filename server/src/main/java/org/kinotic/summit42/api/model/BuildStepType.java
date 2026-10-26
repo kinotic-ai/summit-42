@@ -23,5 +23,10 @@ public enum BuildStepType {
     /**
      * Checking how the deployed app behaves, by reading its logs or calling its services.
      */
-    CHECKING
+    CHECKING,
+
+    /**
+     * Changing a setting of the app, such as who can sign in to it.
+     */
+    CONFIGURING
 }

@@ -9,48 +9,59 @@
     </div>
 
     <template v-else-if="invite">
-      <template v-if="!invite.applicationId">
+      <!-- an app's providers return to the app, whose sign-in page accepts the invitation on the first sign-in -->
+      <template v-if="invite.applicationId">
+        <template v-if="invite.providers.length > 0">
+          <p class="muted">
+            Sign in to the app with {{ providerNames }} as <strong>{{ invite.email }}</strong>; your first sign-in accepts this
+            invitation.
+          </p>
+          <a v-if="invite.signInUrl" :href="invite.signInUrl" class="btn btn--secondary btn--block">Continue to the app</a>
+          <div v-if="invite.localEnabled" class="divider">or set a password</div>
+        </template>
+        <p v-else-if="!invite.localEnabled" class="muted">
+          The app offers no way to sign in right now, so this invitation cannot be accepted yet. Ask whoever invited you
+          to turn on a sign-in method for it, then open this link again.
+        </p>
+      </template>
+
+      <!-- an invitation into the organization is accepted through any provider its login offers -->
+      <template v-else>
         <ProviderButton v-for="provider in invite.providers"
                         :key="provider.id"
                         :action="inviteProviderUrl(provider.id, token!)"
                         :provider="provider.provider"
                         :label="provider.name || providerDisplayName(provider.provider)"
                         verb="Accept" />
-        <div v-if="invite.providers.length > 0 && passwordAccepts" class="divider">or</div>
+        <div v-if="invite.providers.length > 0 && invite.localEnabled" class="divider">or set a password</div>
+        <p v-if="!invite.localEnabled" class="muted">
+          {{ invite.organizationName || 'The organization' }} accepts invitations through its sign-in providers. Continue with
+          one of them as <strong>{{ invite.email }}</strong> to join.
+        </p>
       </template>
 
-      <form v-if="passwordAccepts" @submit.prevent="accept">
+      <form v-if="invite.localEnabled" @submit.prevent="accept">
         <div class="field">
           <label for="email">Email</label>
           <input id="email" class="input" type="email" :value="invite.email" readonly />
         </div>
-        <template v-if="existingPassword">
-          <div class="field">
-            <label for="password">Password</label>
-            <input id="password" v-model="password" class="input" type="password" autocomplete="current-password" required />
-            <span class="hint">You already have an account. Enter its password to join.</span>
-          </div>
-        </template>
-        <template v-else>
-          <div class="field">
-            <label for="name">Your name</label>
-            <input id="name" v-model="displayName" class="input" autocomplete="name" />
-          </div>
-          <div class="field">
-            <label for="password">Password</label>
-            <input id="password" v-model="password" class="input" type="password" autocomplete="new-password" required />
-          </div>
-          <div class="field">
-            <label for="confirm">Confirm password</label>
-            <input id="confirm" v-model="confirm" class="input" type="password" autocomplete="new-password" required />
-          </div>
-        </template>
+        <div class="field">
+          <label for="name">Your name</label>
+          <input id="name" v-model="displayName" class="input" autocomplete="name" />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" v-model="password" class="input" type="password" autocomplete="new-password" required />
+        </div>
+        <div class="field">
+          <label for="confirm">Confirm password</label>
+          <input id="confirm" v-model="confirm" class="input" type="password" autocomplete="new-password" required />
+        </div>
         <button type="submit" class="btn btn--block" :disabled="accepting">
           <span v-if="accepting" class="spinner" />
           Accept invitation
         </button>
       </form>
-      <p v-else class="muted">Your account signs in through a provider. Accept with it above.</p>
     </template>
 
     <template #footer>
@@ -67,12 +78,18 @@ import ProviderButton from '@/components/ProviderButton.vue'
 import {
   acceptInvite,
   authErrorMessage,
+  authErrorOf,
   fetchInvite,
   type InviteDetails,
   inviteProviderUrl,
   providerDisplayName,
 } from '@/api/auth'
 
+/**
+ * The emailed invitation's page: an invitation into the organization is accepted through any provider its login
+ * offers or, while the organization takes passwords, by setting one; an invitation into an app by setting a password
+ * where the app takes one, or by signing in at the app through one of its providers.
+ */
 const route = useRoute()
 const router = useRouter()
 
@@ -107,15 +124,17 @@ const subtitle = computed(() => {
   return ret
 })
 
-// the existing account's password accepts; an account that only signs in through a provider accepts through it
-const existingPassword = computed(() => !!invite.value?.organizationUserExists && invite.value.organizationUserHasPassword)
-const passwordAccepts = computed(() => !invite.value?.organizationUserExists || existingPassword.value)
+// the app's providers by name, as its sign-in page shows them: "Google, Okta or Microsoft"
+const providerNames = computed(() => {
+  const names = (invite.value?.providers ?? []).map(provider => provider.name || providerDisplayName(provider.provider))
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names.join('')
+})
 
 onMounted(async () => {
   // a failed provider acceptance lands here with ?error=<code>; it is cleared so a refresh does not repeat it
-  const code = typeof route.query.error === 'string' ? route.query.error : null
-  if (code) {
-    error.value = authErrorMessage(code)
+  const failed = authErrorOf(route.query)
+  if (failed) {
+    error.value = authErrorMessage(failed.code, failed.provider)
     await router.replace({ query: token ? { token } : {} })
   }
   if (!token) {
@@ -133,7 +152,7 @@ onMounted(async () => {
 
 async function accept() {
   if (!token) return
-  if (!existingPassword.value && password.value !== confirm.value) {
+  if (password.value !== confirm.value) {
     error.value = 'The passwords do not match.'
     return
   }
@@ -143,7 +162,7 @@ async function accept() {
     const app = await acceptInvite(token, password.value, displayName.value.trim() || null)
     if (app?.primaryUiUrl) {
       window.location.assign(app.primaryUiUrl)
-    } else {
+    } else if (app) {
       accepted.value = true
     }
   } catch (err) {
@@ -161,5 +180,9 @@ async function accept() {
   display: flex;
   justify-content: center;
   padding: 1.5rem 0;
+}
+
+.muted + .btn {
+  margin-top: 0.5rem;
 }
 </style>

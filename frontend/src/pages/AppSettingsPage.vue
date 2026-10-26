@@ -4,7 +4,7 @@
       <div class="page__header">
         <div>
           <h1 class="page-title">Settings</h1>
-          <p class="page-subtitle">How {{ app.name }} is named, and where its code lives.</p>
+          <p class="page-subtitle">How {{ app.name }} is named, who signs in to it, and where its code lives.</p>
         </div>
       </div>
 
@@ -66,6 +66,8 @@
           </section>
         </div>
       </div>
+
+      <SignInProvidersPanel :application-id="app.applicationId" class="sign-in" />
     </div>
   </main>
 </template>
@@ -76,11 +78,12 @@ import { useRouter } from 'vue-router'
 import { Kinotic } from '@kinotic-ai/core'
 import type { Project } from '@kinotic-ai/management-api'
 import AppIcon from '@/components/AppIcon.vue'
+import SignInProvidersPanel from '@/components/SignInProvidersPanel.vue'
 import { markRenamed, type BuilderApp } from '@/api/appBuilder'
 import { deleteApp, findProjects, repoUrl } from '@/api/appProjects'
 import { copyText, errorText, hostOf } from '@/api/format'
 
-/** An app's name and description, where its code lives, and deleting it. */
+/** An app's name and description, who signs in to it and how, where its code lives, and deleting it. */
 const props = defineProps<{
   app: BuilderApp
 }>()
@@ -167,6 +170,10 @@ async function remove() {
 
 .settings__title {
   margin-bottom: 1rem;
+}
+
+.sign-in {
+  margin-top: 1.25rem;
 }
 
 .settings__actions {

@@ -7,10 +7,10 @@ import { SESSION } from '@/api/session'
 export type BuildEventType = 'TEXT' | 'PROGRESS' | 'APP_READY' | 'USER_MESSAGE' | 'ERROR'
 
 /**
- * What a PROGRESS step does: reading the app's files, a skill or the docs; committing files; deploying; or checking how
- * the deployed app behaves, by reading its logs or calling its services.
+ * What a PROGRESS step does: reading the app's files, a skill or the docs; committing files; deploying; checking how
+ * the deployed app behaves, by reading its logs or calling its services; or configuring the app, such as who can sign in.
  */
-export type BuildStepType = 'READING' | 'COMMITTING' | 'DEPLOYING' | 'CHECKING'
+export type BuildStepType = 'READING' | 'COMMITTING' | 'DEPLOYING' | 'CHECKING' | 'CONFIGURING'
 
 /**
  * One event of a chat turn: TEXT is a chunk of the assistant's reply to append, PROGRESS a one-line status of what
@@ -96,10 +96,11 @@ export class AppBuilderService {
 
     /**
      * Creates an app with its GitHub repository, streaming each step as it starts and then the created app; errors
-     * when the organization already has an app with that name, or the app cannot be created.
+     * when the organization already has an app with that name, or the app cannot be created. With openSignUp anyone
+     * can sign up to the app; without it only the people invited on its Users page sign in.
      */
-    public createApp(name: string, description: string | null): Observable<AppCreationEvent> {
-        return this.serviceProxy.invokeStream('createApp', [name, description])
+    public createApp(name: string, description: string | null, openSignUp: boolean): Observable<AppCreationEvent> {
+        return this.serviceProxy.invokeStream('createApp', [name, description, openSignUp])
     }
 
     /**
@@ -160,9 +161,9 @@ const unsentDescriptions = new Map<string, string>()
  * Creates an app and adds it to {@link APPS}, calling onEvent with each step as it starts and then CREATED; its
  * description becomes the first message of its chat.
  */
-export async function createApp(name: string, description: string | null,
+export async function createApp(name: string, description: string | null, openSignUp: boolean,
                                 onEvent: (type: AppCreationEventType) => void): Promise<BuilderApp> {
-    const created = await lastValueFrom(APP_BUILDER.createApp(name, description).pipe(tap(event => onEvent(event.type))))
+    const created = await lastValueFrom(APP_BUILDER.createApp(name, description, openSignUp).pipe(tap(event => onEvent(event.type))))
     const app = created.app as BuilderApp
     if (description) {
         unsentDescriptions.set(app.applicationId, description)

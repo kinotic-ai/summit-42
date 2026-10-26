@@ -67,9 +67,14 @@ public abstract class AppBuilderServiceTestBase {
         return streamAs(participant, service -> service.chat(applicationId, message));
     }
 
-    // the events createApp reports, ending with the created app
+    // the events createApp reports, ending with the created app, for an app only invited people sign in to
     protected CompletableFuture<List<AppCreationEvent>> createAppAs(Participant participant, String name, String description) {
-        return streamAs(participant, service -> service.createApp(name, description)).collectList().toFuture();
+        return createAppAs(participant, name, description, false);
+    }
+
+    protected CompletableFuture<List<AppCreationEvent>> createAppAs(Participant participant, String name, String description,
+                                                                    boolean openSignUp) {
+        return streamAs(participant, service -> service.createApp(name, description, openSignUp)).collectList().toFuture();
     }
 
     // the stream's request carries the participant bound when the function is invoked, and is sent on subscription

@@ -90,6 +90,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
     private final ChatClientFactory chatClientFactory;
     private final AppBuilderTools tools;
     private final KinoticSkills kinoticSkills;
+    private final AppSignInService appSignInService;
     private final SystemMessage systemMessage = new SystemMessage(loadSystemPrompt());
 
     @Override
@@ -114,7 +115,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
     }
 
     @Override
-    public Flux<AppCreationEvent> createApp(String name, String description) {
+    public Flux<AppCreationEvent> createApp(String name, String description, boolean openSignUp) {
         OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
         Validate.notBlank(name, "Name the app");
         String wanted = StringUtils.trimToNull(description);
@@ -130,7 +131,11 @@ public class DefaultAppBuilderService implements AppBuilderService {
                         Application application = new Application(name.strip(), summary)
                                 .setOrganizationId(participant.getOrganizationId())
                                 .setTenantManagement(TenantManagement.SYSTEM);
-                        return callAs(participant, () -> applicationService.createSync(application));
+                        return callAs(participant, () -> applicationService.createSync(application))
+                                // the app takes its users' passwords from the start, which its invitations are accepted with
+                                .compose(created -> appSignInService.create(participant, created.getId(), openSignUp)
+                                                                    .map(created)
+                                                                    .recover(failure -> deleteAfterFailure(participant, created, failure)));
                     })
                     // an app deleted earlier under the same name had the same id, and its conversation is not this app's;
                     // one that cannot be deleted is logged rather than failing an app that was created
@@ -185,10 +190,10 @@ public class DefaultAppBuilderService implements AppBuilderService {
             // the turn takes the session when the stream is subscribed, so a stream never subscribed holds nothing
             ret = Mono.fromCompletionStage(() -> findBuildableProject(participant, applicationId)
                               .compose(project -> sessionRepository.findById(applicationKey)
-                                                                   .compose(session -> kinoticSkills.current()
-                                                                           .map(skills -> Tuples.of(project, session, skills))))
+                                                                   .compose(session -> appContext(participant, project)
+                                                                           .map(context -> Tuples.of(session, context))))
                               .toCompletionStage())
-                      .flatMapMany(found -> startTurn(participant, found.getT2(), found.getT1(), found.getT3(), message))
+                      .flatMapMany(found -> startTurn(participant, found.getT1(), found.getT2(), message))
                       .onErrorResume(e -> failure(applicationKey, e));
         }
         return ret;
@@ -242,10 +247,17 @@ public class DefaultAppBuilderService implements AppBuilderService {
                 });
     }
 
+    // what the turn knows about the app: the skills revision and who can sign in, read as the turn starts
+    private Future<AppContext> appContext(OrganizationParticipant participant, Project project) {
+        Future<SkillSet> skills = kinoticSkills.current();
+        Future<AppSignIn> signIn = appSignInService.find(participant, project.getApplicationId());
+        return Future.all(skills, signIn).map(v -> new AppContext(project, skills.result(), signIn.result()));
+    }
+
     // a message sent while a turn takes messages steers it, one sent as its stream finishes waits for it to end, and
     // any other starts a turn unless one is running
-    private Flux<BuildEvent> startTurn(OrganizationParticipant participant, BuilderSession session, Project project,
-                                       SkillSet skills, String message) {
+    private Flux<BuildEvent> startTurn(OrganizationParticipant participant, BuilderSession session, AppContext context,
+                                       String message) {
         Flux<BuildEvent> ret = null;
         synchronized (session) {
             if (session.getSteeringMessages() != null) {
@@ -254,7 +266,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
             } else if (session.getTurnEvents() != null) {
                 ret = session.getTurnEvents()
                              .ignoreElements()
-                             .thenMany(Flux.defer(() -> startTurn(participant, session, project, skills, message)));
+                             .thenMany(Flux.defer(() -> startTurn(participant, session, context, message)));
             } else if (session.isTurnRunning()) {
                 ret = Flux.just(BuildEvent.error(TURN_RUNNING));
             } else {
@@ -265,13 +277,12 @@ public class DefaultAppBuilderService implements AppBuilderService {
         }
         if (ret == null) {
             save(session);
-            ret = runTurn(participant, session, project, skills);
+            ret = runTurn(participant, session, context);
         }
         return ret;
     }
 
-    private Flux<BuildEvent> runTurn(OrganizationParticipant participant, BuilderSession session, Project project,
-                                     SkillSet skills) {
+    private Flux<BuildEvent> runTurn(OrganizationParticipant participant, BuilderSession session, AppContext context) {
         Sinks.Many<BuildEvent> progress = Sinks.many().unicast().onBackpressureBuffer();
         // the turn's reply since the last message it read, and the messages it has finished, which join the
         // conversation when it ends; both are guarded by the session
@@ -282,7 +293,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
         // each message the user sent to steer the turn is reported where Claude reads it
         Consumer<List<String>> report =
                 steering -> steering.forEach(message -> progress.emitNext(BuildEvent.userMessage(message), RETRY_CONCURRENT_EMIT));
-        BuilderTurn turn = new BuilderTurn(participant, session, project.getId(), skills,
+        BuilderTurn turn = new BuilderTurn(participant, session, context.project().getId(), context.skills(),
                                            event -> progress.emitNext(event, RETRY_CONCURRENT_EMIT),
                                            () -> {
                                                List<String> steering = takeSteering(session, reply, finished);
@@ -296,7 +307,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
                         synchronized (session) {
                             List<ChatMessage> messages = new ArrayList<>(session.getConversation().getMessages());
                             messages.addAll(finished);
-                            prompt = promptFor(project, skills, messages);
+                            prompt = promptFor(context, messages);
                         }
                         return Mono.fromCompletionStage(() -> chatClientFactory.chatClient())
                                    .flatMapMany(client -> client.prompt()
@@ -390,7 +401,6 @@ public class DefaultAppBuilderService implements AppBuilderService {
     }
 
 
-    // an application whose project could not be created is deleted, so its name can be used again
     private Future<Project> createProject(OrganizationParticipant participant, Application application) {
         Project project = new Project();
         project.setName(application.getName());
@@ -400,14 +410,19 @@ public class DefaultAppBuilderService implements AppBuilderService {
         project.setSourceOfTruth(ProjectType.TYPESCRIPT);
         project.setRepoPrivate(true);
         return callAs(participant, () -> projectService.createSync(project))
-                .recover(failure -> callAs(participant, () -> applicationService.deleteById(application.getId()))
-                        .transform(deleted -> {
-                            if (deleted.failed()) {
-                                log.error("Application {} of organization {} is left without a project",
-                                          application.getId(), participant.getOrganizationId(), deleted.cause());
-                            }
-                            return Future.failedFuture(failure);
-                        }));
+                .recover(failure -> deleteAfterFailure(participant, application, failure));
+    }
+
+    // an application whose set-up failed is deleted, so its name can be used again, and the failure is passed on
+    private <T> Future<T> deleteAfterFailure(OrganizationParticipant participant, Application application, Throwable failure) {
+        return callAs(participant, () -> applicationService.deleteById(application.getId()))
+                .transform(deleted -> {
+                    if (deleted.failed()) {
+                        log.error("Application {} of organization {} is left half set up",
+                                  application.getId(), participant.getOrganizationId(), deleted.cause());
+                    }
+                    return Future.failedFuture(failure);
+                });
     }
 
     // the app's project once it can be built in; fails with BuildUnavailableException when the organization has no
@@ -490,10 +505,10 @@ public class DefaultAppBuilderService implements AppBuilderService {
         return Flux.just(BuildEvent.error(text));
     }
 
-    // the system prompt, the skills Claude can read, what the app is, and the most recent of the messages, which end
-    // with the one to answer; tool calls of earlier answers are not kept, so Claude reads the repository again when it
-    // needs to
-    private List<Message> promptFor(Project project, SkillSet skills, List<ChatMessage> messages) {
+    // the system prompt, the skills Claude can read, what the app is and who can sign in to it, and the most recent of
+    // the messages, which end with the one to answer; tool calls of earlier answers are not kept, so Claude reads the
+    // repository again when it needs to
+    private List<Message> promptFor(AppContext context, List<ChatMessage> messages) {
         int from = Math.max(0, messages.size() - MAX_HISTORY_MESSAGES);
         // a window that cuts an exchange in two drops the reply whose message it cut off
         if (from > 0 && messages.get(from).getRole() == ChatRole.ASSISTANT) {
@@ -501,11 +516,13 @@ public class DefaultAppBuilderService implements AppBuilderService {
         }
         List<Message> ret = new ArrayList<>();
         ret.add(systemMessage);
-        ret.add(new SystemMessage("The Kinotic skills readSkill reads:\n" + skills.catalog()));
+        ret.add(new SystemMessage("The Kinotic skills readSkill reads:\n" + context.skills().catalog()));
         // the project carries the name and description the user gave the app
+        Project project = context.project();
         ret.add(new SystemMessage("The user named this app '" + project.getName() + "'"
                                   + (project.getDescription() != null ? " and described it as: " + project.getDescription() : "")
                                   + "."));
+        ret.add(new SystemMessage(context.signIn().describe()));
         for (ChatMessage chatMessage : messages.subList(from, messages.size())) {
             ret.add(chatMessage.getRole() == ChatRole.USER
                             ? new UserMessage(chatMessage.getText())

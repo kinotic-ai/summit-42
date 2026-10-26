@@ -100,6 +100,16 @@ public class FakeKinoticConfiguration {
     }
 
     @Bean
+    public FakeOwnedPasswordConfigurationService fakeOwnedPasswordConfigurationService(SecurityContext securityContext) {
+        return fake(FakeOwnedPasswordConfigurationService.class, securityContext);
+    }
+
+    @Bean
+    public FakeOwnedOidcConfigurationService fakeOwnedOidcConfigurationService(SecurityContext securityContext) {
+        return fake(FakeOwnedOidcConfigurationService.class, securityContext);
+    }
+
+    @Bean
     public FakeLlmConfigurationService fakeLlmConfigurationService(SecurityContext securityContext) {
         return new FakeLlmConfigurationService(securityContext);
     }

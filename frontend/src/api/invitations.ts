@@ -1,11 +1,11 @@
 import { Kinotic, type IKinotic, type IServiceProxy } from '@kinotic-ai/core'
-import type { OrganizationMember, PendingInviteSummary } from '@kinotic-ai/management-api'
+import type { ApplicationParticipantIdentity, OrganizationParticipantIdentity } from '@kinotic-ai/management-api'
 
 const SERVICE_IDENTIFIER = 'management-api~org.kinotic.summit42.api.services.InvitationService'
 
 /**
- * The invitations the signed-in user sends into their organization and its apps, in their name, with emails whose
- * links open this UI.
+ * The people the signed-in user adds to their organization and its apps, each emailed an invitation in the user's
+ * name whose link opens this UI.
  */
 export class InvitationService {
 
@@ -16,18 +16,18 @@ export class InvitationService {
     }
 
     /** Adds a person to the organization and emails them an invitation; they are listed as pending until they join. */
-    public addMember(email: string, displayName: string | null): Promise<OrganizationMember> {
-        return this.serviceProxy.invoke('addMember', [email, displayName])
+    public addOrganizationUser(email: string, displayName: string | null): Promise<OrganizationParticipantIdentity> {
+        return this.serviceProxy.invoke('addOrganizationUser', [email, displayName])
     }
 
-    /** Emails a pending member their invitation again, or a first one for a member added without. */
-    public sendInvitation(email: string): Promise<void> {
-        return this.serviceProxy.invoke('sendInvitation', [email])
+    /** Adds a person to one of the organization's apps and emails them an invitation; they are pending until they first sign in. */
+    public addApplicationUser(email: string, displayName: string | null, applicationId: string): Promise<ApplicationParticipantIdentity> {
+        return this.serviceProxy.invoke('addApplicationUser', [email, displayName, applicationId])
     }
 
-    /** Invites someone into one of the organization's apps by email. */
-    public inviteMember(email: string, displayName: string | null, applicationId: string): Promise<PendingInviteSummary> {
-        return this.serviceProxy.invoke('inviteMember', [email, displayName, applicationId])
+    /** Emails a pending member of the organization, or a pending user of the app, their invitation again. */
+    public sendInvitation(email: string, applicationId: string | null): Promise<void> {
+        return this.serviceProxy.invoke('sendInvitation', [email, applicationId])
     }
 }
 

@@ -37,6 +37,16 @@
                 placeholder="e.g. Customers book grooming appointments for their dogs, and staff see the day's bookings" />
       <span class="hint">Summit 42 starts building from this as soon as the app is created.</span>
     </div>
+    <div class="field">
+      <span class="label">Who can sign in</span>
+      <div class="choices" role="radiogroup" aria-label="Who can sign in">
+        <label v-for="option in ACCESS_OPTIONS" :key="String(option.value)" :class="['choice', { 'choice--chosen': openSignUp === option.value }]">
+          <input v-model="openSignUp" type="radio" name="access" :value="option.value" />
+          <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
+        </label>
+      </div>
+      <span class="hint">You can change this later on the app's Settings page, or ask for it in the chat.</span>
+    </div>
     <div class="create__actions">
       <slot name="cancel" />
       <button type="submit" :class="['btn', { 'btn--block': block }]" :disabled="name.trim().length === 0">Create app</button>
@@ -50,7 +60,10 @@ import AppIcon from '@/components/AppIcon.vue'
 import { createApp, type AppCreationEventType, type BuilderApp } from '@/api/appBuilder'
 import { errorText, formatDuration } from '@/api/format'
 
-/** Names and describes a new app and creates it in the organization, showing each step while it does. */
+/**
+ * Names and describes a new app, says who can sign in to it, and creates it in the organization, showing each step
+ * while it does.
+ */
 defineProps<{
   /** True to stretch the submit button across the form. */
   block?: boolean
@@ -67,8 +80,14 @@ interface CreationStep {
   text: string
 }
 
+const ACCESS_OPTIONS = [
+  { value: false, label: 'People you invite', description: 'Only the people you invite on the app\'s Users page can sign in.' },
+  { value: true, label: 'Anyone who signs up', description: 'Anyone can create an account at the app with an email and a password.' },
+]
+
 const name = ref('')
 const description = ref('')
+const openSignUp = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const creatingName = ref('')
@@ -93,7 +112,7 @@ async function create() {
   startClock()
   // the steps stay shown once the app is created, while the parent opens its chat
   try {
-    emit('created', await createApp(trimmed, wanted, type => {
+    emit('created', await createApp(trimmed, wanted, openSignUp.value, type => {
       current.value = steps.value.findIndex(step => step.type === type)
     }))
   } catch (err) {
@@ -141,6 +160,12 @@ function stopClock() {
 </script>
 
 <style scoped>
+.label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
 .create__actions {
   display: flex;
   justify-content: flex-end;

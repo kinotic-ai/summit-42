@@ -5,15 +5,26 @@ import { apiUrl } from '@/api/server'
  * gateway sets on a successful login or sign-up is stored, and later calls and the STOMP handshake present it.
  */
 
-/** A sign-in method an organization's login offers, as GET /api/auth/org/login/:orgId/providers lists it. */
+/**
+ * A sign-in provider a login offers, as GET /api/auth/org/login/:orgId/providers and the invitation details list
+ * them: an email and a password, which a page offers as a form, or an OIDC provider, offered as a button.
+ */
 export interface LoginProvider {
     id: string
+    type: 'PASSWORD' | 'OIDC'
     name: string | null
+    /** The OIDC provider's key, such as github or okta; null for an email and a password. */
     provider: string | null
 }
 
 /** The provider key of GitHub, which every organization signs up with. */
 export const GITHUB_PROVIDER = 'github'
+
+/** The ?error= code and the provider it names, as the gateway's redirects put them on a page's query. */
+export function authErrorOf(query: Record<string, unknown>): { code: string; provider: string | null } | null {
+    const code = typeof query.error === 'string' && query.error ? query.error : null
+    return code ? { code, provider: typeof query.provider === 'string' && query.provider ? query.provider : null } : null
+}
 
 // the organization this browser last signed in to, so a returning member only confirms it
 const LAST_ORGANIZATION_KEY = 'summit42.lastOrganization'
@@ -130,7 +141,7 @@ export async function fetchSocialProviders(): Promise<string[]> {
     return ret
 }
 
-/** The sign-in methods the organization's login offers, or null when no organization has that id. */
+/** The sign-in providers the organization's login offers, or null when no organization has that id. */
 export async function fetchOrganizationProviders(organizationId: string): Promise<LoginProvider[] | null> {
     let ret: LoginProvider[] | null = []
     const res = await fetch(apiUrl(`/api/auth/org/login/${encodeURIComponent(organizationId)}/providers`))
@@ -211,12 +222,12 @@ export interface InviteDetails {
     applicationId: string | null
     invitedByName: string | null
     expiresAt: string
-    /** Whether the invited email already has an account someone signs in as. */
-    organizationUserExists: boolean
-    /** Whether that account has a password, which accepting with a password must then match. */
-    organizationUserHasPassword: boolean
-    /** The sign-in methods the invitation can be accepted through. */
+    /** Whether the invitation may be accepted with a password, which only a login that takes one allows. */
+    localEnabled: boolean
+    /** The providers of the login the invitation is accepted at: the organization's, or the app's own. */
     providers: LoginProvider[]
+    /** An app's sign-in page, where signing in through one of its providers accepts an invitation into it; null otherwise. */
+    signInUrl: string | null
 }
 
 /** What accepting an invitation into an app returns: the app's own sign-in page, or null while it has none. */
@@ -235,8 +246,8 @@ export async function fetchInvite(token: string): Promise<InviteDetails> {
 }
 
 /**
- * Accepts an invitation with a password: a new one for a new account, or the existing account's. Accepting one into
- * the organization establishes the session and resolves null; accepting one into an app resolves where its users sign in.
+ * Accepts an invitation with the password the invitee chose, where the login takes one. Accepting one into the
+ * organization establishes the session and resolves null; accepting one into an app resolves where its users sign in.
  */
 export async function acceptInvite(token: string, password: string, displayName: string | null): Promise<AppInviteAccepted | null> {
     const res = await postJson('/api/auth/invite/accept', { token, password, displayName }, 'Could not accept the invitation')
@@ -253,19 +264,21 @@ export function inviteProviderUrl(configurationId: string, token: string): strin
     return apiUrl(`/api/auth/invite/oidc/start/${encodeURIComponent(configurationId)}?token=${encodeURIComponent(token)}`)
 }
 
-/** The message for an ?error= code the gateway's redirects put on /login or /invite/accept. */
-export function authErrorMessage(code: string): string {
+/**
+ * The message for an ?error= code the gateway's redirects put on /login or /invite/accept, naming the provider whose
+ * answer failed the sign-in when the redirect's provider parameter gives its key.
+ */
+export function authErrorMessage(code: string, provider: string | null): string {
     let ret: string
     switch (code) {
         case 'no_user': ret = 'No account signs in with that identity. Create one first.'; break
         case 'multiple_organizations': ret = 'Your account belongs to several organizations, but the choice expired. Please sign in again.'; break
-        case 'user_exists': ret = 'An account already exists for that email or identity. Sign in instead.'; break
-        case 'user_pending': ret = 'You were invited to an organization. Accept the invitation emailed to you first.'; break
+        case 'user_exists': ret = 'That email already signs in here. Sign in instead.'; break
         case 'user_disabled': ret = 'This account cannot sign in to the organization.'; break
         case 'email_mismatch': ret = 'That account uses a different email from the one invited. Use an account with the invited address.'; break
         case 'invite_invalid': ret = 'This invitation is no longer valid. Ask whoever invited you for a new one.'; break
         case 'config_not_found': ret = 'That sign-in method is not offered for this invitation.'; break
-        case 'email_not_verified': ret = 'Your provider has not verified your email address.'; break
+        case 'email_not_verified': ret = `${provider ? providerDisplayName(provider) : 'Your identity provider'} has not verified your email address. Verify it there, then try again.`; break
         case 'state_mismatch': ret = 'The sign-in expired. Please try again.'; break
         case 'access_denied': ret = 'The sign-in was declined. Please try again.'; break
         case 'signup_failed': ret = 'Sign-up failed. Please try again.'; break

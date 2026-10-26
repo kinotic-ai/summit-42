@@ -191,8 +191,8 @@ const thinking = computed(() => streaming.value && activeStep.value === null
                                 && (reply.value?.parts.length === 0 || now.value - lastEventAt.value >= 1000))
 
 // the stage follows the round's last step: reading plans, a quiet stretch after reading is Claude writing the code it
-// then commits, and deploying runs until the app is live, which ends the round; checking the deployed app keeps the
-// stage it is in
+// then commits, and deploying runs until the app is live, which ends the round; checking the deployed app and
+// configuring it keep the stage it is in
 const progress = computed<BuildProgress | null>(() => {
   let ret: BuildProgress | null = null
   if (streaming.value && reply.value) {
@@ -471,7 +471,7 @@ function activeStepOf(turn: Turn): Step | null {
 // starts a round
 function addStageStep(turn: Turn, step: Step) {
   addStep(turn, step)
-  if (step.type !== 'CHECKING') {
+  if (step.type !== 'CHECKING' && step.type !== 'CONFIGURING') {
     if (stageStep.value?.type === 'LIVE') {
       roundStartedAt.value = step.startedAt
     }
