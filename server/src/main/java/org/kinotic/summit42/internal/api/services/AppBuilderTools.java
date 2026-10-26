@@ -253,6 +253,16 @@ public class AppBuilderTools {
     }
 
     @Tool(description = """
+            Says who can sign in to the app and how: only the people the user invites on the app's Users page in \
+            Summit 42, or anyone who signs up, and whether with an email and a password, through the app's sign-in \
+            providers, or not at all yet.""")
+    public String readSignIn(ToolContext toolContext) {
+        return act(toolContext, BuildStepType.READING, "Checking who can sign in",
+                   turn -> await(appSignInService.find(turn.getParticipant(),
+                                                       turn.getSession().getApplicationKey().applicationId())).describe());
+    }
+
+    @Tool(description = """
             Sets who can sign in to the app. With openSignUp true, anyone can sign up at the app with an email and a \
             password or through any sign-in provider the app offers; with false, only the people the user invites on \
             the app's Users page in Summit 42 sign in. Call it when the user says who should be able to sign in. It \

@@ -6,7 +6,7 @@ package org.kinotic.summit42.api.model;
 public enum BuildStepType {
 
     /**
-     * Reading the app's files, a skill or Kinotic's docs.
+     * Reading the app's files or settings, a skill or Kinotic's docs.
      */
     READING,
 

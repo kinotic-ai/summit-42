@@ -523,19 +523,22 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     @Test
-    public void testChatTellsClaudeWhoCanSignInAndConfigureSignInChangesIt() {
+    public void testReadSignInTellsClaudeWhoCanSignInAndConfigureSignInChangesIt() {
         projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
         passwordConfigurationService.add(organizationId(), "todo", false);
         oidcConfigurationService.add(organizationId(), "todo", "Google", OidcProviderType.GOOGLE);
         oidcConfigurationService.add(organizationId(), "other", "Okta", OidcProviderType.OKTA);
+        anthropic.replyWithToolCall("readSignIn");
         anthropic.replyWithToolCall("configureSignIn", new JsonObject().put("openSignUp", true));
         anthropic.replyWithText("Anyone can sign up now");
 
         List<BuildEvent> events = chat("todo", "Let my customers sign up");
 
-        String system = systemOf(anthropic.requests().getFirst());
-        Assertions.assertTrue(system.contains("Only the people the user invites on the app's Users page in Summit 42 can sign in,"
-                                              + " with an email and a password or through Google."), system);
+        Assertions.assertEquals("Only the people the user invites on the app's Users page in Summit 42 can sign in,"
+                                + " with an email and a password or through Google.",
+                                Json.decodeValue(toolResultOf(anthropic.requests().get(1))));
+        Assertions.assertTrue(events.stream().anyMatch(event -> event.getStepType() == BuildStepType.READING
+                                                                && "Checking who can sign in".equals(event.getText())), events.toString());
         Assertions.assertTrue(events.stream().anyMatch(event -> event.getStepType() == BuildStepType.CONFIGURING
                                                                 && "Letting anyone sign up".equals(event.getText())), events.toString());
         Assertions.assertEquals("Anyone can sign up at the app with an email and a password or through Google.",
@@ -572,14 +575,15 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     @Test
-    public void testChatTellsClaudeWhenNobodyCanSignInYet() {
+    public void testReadSignInSaysWhenNobodyCanSignInYet() {
         projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
-        anthropic.replyWithText("Done");
+        anthropic.replyWithToolCall("readSignIn");
+        anthropic.replyWithText("Nobody yet");
 
-        chat("todo", "Build a todo app");
+        chat("todo", "Who can sign in?");
 
-        String system = systemOf(anthropic.requests().getFirst());
-        Assertions.assertTrue(system.contains("Nobody can sign in to the app yet: the user adds a way to sign in on the app's Settings page in Summit 42."), system);
+        Assertions.assertEquals("Nobody can sign in to the app yet: the user adds a way to sign in on the app's Settings page in Summit 42.",
+                                Json.decodeValue(toolResultOf(anthropic.requests().getLast())));
     }
 
     @Test

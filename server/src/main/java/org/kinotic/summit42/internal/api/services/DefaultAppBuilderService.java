@@ -198,7 +198,7 @@ public class DefaultAppBuilderService implements AppBuilderService {
             // the turn takes the session when the stream is subscribed, so a stream never subscribed holds nothing
             ret = Mono.fromCompletionStage(() -> findBuildableProject(participant, applicationId)
                               .compose(project -> sessionRepository.findById(applicationKey)
-                                                                   .compose(session -> appContext(participant, project)
+                                                                   .compose(session -> appContext(project)
                                                                            .map(context -> Tuples.of(session, context))))
                               .toCompletionStage())
                       .flatMapMany(found -> startTurn(participant, found.getT1(), found.getT2(), message))
@@ -255,11 +255,9 @@ public class DefaultAppBuilderService implements AppBuilderService {
                 });
     }
 
-    // what the turn knows about the app: the skills revision and who can sign in, read as the turn starts
-    private Future<AppContext> appContext(OrganizationParticipant participant, Project project) {
-        Future<SkillSet> skills = kinoticSkills.current();
-        Future<AppSignIn> signIn = appSignInService.find(participant, project.getApplicationId());
-        return Future.all(skills, signIn).map(v -> new AppContext(project, skills.result(), signIn.result()));
+    // what the turn knows about the app, read as the turn starts
+    private Future<AppContext> appContext(Project project) {
+        return kinoticSkills.current().map(skills -> new AppContext(project, skills));
     }
 
     // a message sent while a turn takes messages steers it, one sent as its stream finishes waits for it to end, and
@@ -513,9 +511,9 @@ public class DefaultAppBuilderService implements AppBuilderService {
         return Flux.just(BuildEvent.error(text));
     }
 
-    // the system prompt, the skills Claude can read, what the app is and who can sign in to it, and the most recent of
-    // the messages, which end with the one to answer; tool calls of earlier answers are not kept, so Claude reads the
-    // repository again when it needs to
+    // the system prompt, the skills Claude can read, what the app is, and the most recent of the messages, which end
+    // with the one to answer; tool calls of earlier answers are not kept, so Claude reads the repository again when it
+    // needs to
     private List<Message> promptFor(AppContext context, List<ChatMessage> messages) {
         int from = Math.max(0, messages.size() - MAX_HISTORY_MESSAGES);
         // a window that cuts an exchange in two drops the reply whose message it cut off
@@ -530,7 +528,6 @@ public class DefaultAppBuilderService implements AppBuilderService {
         ret.add(new SystemMessage("The user named this app '" + project.getName() + "'"
                                   + (project.getDescription() != null ? " and described it as: " + project.getDescription() : "")
                                   + "."));
-        ret.add(new SystemMessage(context.signIn().describe()));
         for (ChatMessage chatMessage : messages.subList(from, messages.size())) {
             ret.add(chatMessage.getRole() == ChatRole.USER
                             ? new UserMessage(chatMessage.getText())
