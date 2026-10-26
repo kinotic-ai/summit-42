@@ -51,6 +51,7 @@ public class AppBuilderServiceTests extends AppBuilderServiceTestBase {
 
         assertRefused(callAs(system, AppBuilderServiceProxy::findApps));
         assertRefused(createAppAs(system, "Todo", null));
+        assertRefused(callAs(system, service -> service.setOpenSignUp("todo", true)));
         assertRefused(callAs(system, service -> service.findConversation(applicationId)));
         assertRefused(callAs(system, service -> service.resetConversation(applicationId)));
         StepVerifier.create(chatAs(system, applicationId, "Build a todo app"))

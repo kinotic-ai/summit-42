@@ -12,8 +12,8 @@ import {
  * password configuration, which a login has at most one of.
  */
 export type SignInProvider =
-    | { kind: 'oidc'; configuration: OwnedOidcConfiguration }
-    | { kind: 'password'; configuration: PasswordConfiguration }
+    | { type: 'OIDC'; configuration: OwnedOidcConfiguration }
+    | { type: 'PASSWORD'; configuration: PasswordConfiguration }
 
 /** The name an email and a password is listed by among a login's providers. */
 export const PASSWORD_PROVIDER_NAME = 'Email and password'
@@ -30,7 +30,7 @@ export async function findSignInProviders(applicationId: string | null): Promise
     const ret: SignInProvider[] = []
     for (const configuration of passwords.content ?? []) {
         if ((configuration.applicationId ?? null) === applicationId && !configuration.tenantId) {
-            ret.push({ kind: 'password', configuration })
+            ret.push({ type: 'PASSWORD', configuration })
         }
     }
     for (const configuration of oidc.content ?? []) {
@@ -38,7 +38,7 @@ export async function findSignInProviders(applicationId: string | null): Promise
             ? configuration.type === OidcConfigurationType.ORGANIZATION
             : configuration.type === OidcConfigurationType.APPLICATION && configuration.applicationId === applicationId
         if (ofLogin) {
-            ret.push({ kind: 'oidc', configuration })
+            ret.push({ type: 'OIDC', configuration })
         }
     }
     return ret
@@ -46,7 +46,7 @@ export async function findSignInProviders(applicationId: string | null): Promise
 
 /** Saves a provider as it is, keeping the client secret held for an identity provider. */
 export async function saveSignInProvider(provider: SignInProvider): Promise<void> {
-    if (provider.kind === 'password') {
+    if (provider.type === 'PASSWORD') {
         await Kinotic.ownedPasswordConfigurations.save(provider.configuration)
     } else {
         await Kinotic.ownedOidcConfigurations.save(provider.configuration, null)
@@ -55,7 +55,7 @@ export async function saveSignInProvider(provider: SignInProvider): Promise<void
 
 /** Deletes a provider, with the client secret held for an identity provider. */
 export async function deleteSignInProvider(provider: SignInProvider): Promise<void> {
-    if (provider.kind === 'password') {
+    if (provider.type === 'PASSWORD') {
         await Kinotic.ownedPasswordConfigurations.deleteById(provider.configuration.id!)
     } else {
         await Kinotic.ownedOidcConfigurations.deleteById(provider.configuration.id!)
@@ -67,7 +67,11 @@ export function isManaged(configuration: OwnedOidcConfiguration): boolean {
     return configuration.clientRegistrationType === ClientRegistrationType.MANAGED
 }
 
-/** Whether a provider of an app's login signs new people up, which every provider of the app's login says alike. */
-export function signsUp(provider: SignInProvider): boolean {
-    return provider.configuration.createUserOnSignIn
+/**
+ * Whether anyone may sign up at the app whose login offers the providers: what its email and password says, which
+ * every provider of the login says alike, or what any provider says while it has none.
+ */
+export function openSignUpOf(providers: SignInProvider[]): boolean {
+    const password = providers.find(provider => provider.type === 'PASSWORD')
+    return password ? password.configuration.createUserOnSignIn : providers.some(provider => provider.configuration.createUserOnSignIn)
 }

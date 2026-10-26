@@ -26,6 +26,8 @@ public interface AppBuilderServiceProxy {
 
     Flux<AppCreationEvent> createApp(String name, String description, boolean openSignUp);
 
+    Future<Void> setOpenSignUp(String applicationId, boolean openSignUp);
+
     Flux<BuildEvent> chat(String applicationId, String message);
 
     Flux<BuildEvent> followRunningTurn(String applicationId);

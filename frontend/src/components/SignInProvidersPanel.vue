@@ -17,11 +17,11 @@
     <div v-if="applicationId !== null" class="access">
       <span class="access__label">Who can sign in</span>
       <div class="choices" role="radiogroup" aria-label="Who can sign in">
-        <label v-for="option in ACCESS_OPTIONS" :key="String(option.value)" :class="['choice', { 'choice--chosen': openSignUp === option.value }]">
-          <input type="radio"
+        <label v-for="option in ACCESS_OPTIONS" :key="String(option.value)" :class="['choice', { 'choice--chosen': chosen === option.value }]">
+          <input v-model="chosen"
+                 type="radio"
                  name="access"
                  :value="option.value"
-                 :checked="openSignUp === option.value"
                  :disabled="loading || busy !== null"
                  @change="setOpenSignUp(option.value)" />
           <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
@@ -46,7 +46,12 @@
                 <button type="button" class="btn btn--secondary btn--small" :disabled="busy === row.id" @click="setEnabled(row.provider, !row.enabled)">
                   {{ row.enabled ? 'Turn off' : 'Turn on' }}
                 </button>
-                <button type="button" class="btn btn--danger btn--small" :disabled="busy === row.id" @click="remove(row.provider)">Delete</button>
+                <!-- an app keeps its email and password, which carries who can sign in; turning it off is enough -->
+                <button v-if="row.provider.type === 'OIDC' || applicationId === null"
+                        type="button"
+                        class="btn btn--danger btn--small"
+                        :disabled="busy === row.id"
+                        @click="remove(row.provider)">Delete</button>
               </div>
             </td>
           </tr>
@@ -58,7 +63,7 @@
     <SignInProviderDrawer v-if="drawerOpen"
                           :application-id="applicationId"
                           :provider="editing"
-                          :password-offered="providers.some(provider => provider.kind === 'password')"
+                          :password-offered="providers.some(provider => provider.type === 'PASSWORD')"
                           :open-sign-up="openSignUp"
                           @saved="load"
                           @close="drawerOpen = false" />
@@ -66,25 +71,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import SignInProviderDrawer from '@/components/SignInProviderDrawer.vue'
+import { APP_BUILDER } from '@/api/appBuilder'
 import { providerDisplayName } from '@/api/auth'
 import { errorText } from '@/api/format'
 import {
   deleteSignInProvider,
   findSignInProviders,
   isManaged,
+  openSignUpOf,
   PASSWORD_PROVIDER_NAME,
   saveSignInProvider,
-  signsUp,
   type SignInProvider,
 } from '@/api/signInProviders'
 
 /**
  * The sign-in providers of the organization's own login, or of an app's when applicationId is given, with adding,
  * editing, turning on or off and deleting them. An app's panel also chooses who can sign in: only the people invited
- * on its Users page, or anyone who signs up, which sets whether each provider of the app's login signs new people up.
+ * on its Users page, or anyone who signs up, which the server sets on every provider of the app's login.
  */
 const props = defineProps<{
   applicationId: string | null
@@ -113,8 +119,9 @@ const busy = ref<string | null>(null)
 const drawerOpen = ref(false)
 const editing = ref<SignInProvider | null>(null)
 
-// every provider of an app's login says the same, so any one of them answers for the app
-const openSignUp = computed(() => providers.value.some(signsUp))
+const openSignUp = computed(() => openSignUpOf(providers.value))
+// the radio's own state, so a choice the server refused snaps back to what the app has
+const chosen = ref(false)
 const rows = computed<ProviderRow[]>(() => providers.value.map(toRow))
 
 const intro = computed(() => props.applicationId === null
@@ -126,9 +133,11 @@ const emptyText = computed(() => props.applicationId === null
 
 onMounted(load)
 
+watch(openSignUp, open => { chosen.value = open }, { immediate: true })
+
 function toRow(provider: SignInProvider): ProviderRow {
   let ret: ProviderRow
-  if (provider.kind === 'password') {
+  if (provider.type === 'PASSWORD') {
     ret = { id: provider.configuration.id!, provider, name: PASSWORD_PROVIDER_NAME, providerName: 'Password', detail: null,
             enabled: provider.configuration.enabled }
   } else {
@@ -164,16 +173,15 @@ async function act(id: string, action: () => Promise<unknown>, fallback: string)
     await load()
   } catch (err) {
     error.value = errorText(err, fallback)
+    chosen.value = openSignUp.value
   } finally {
     busy.value = null
   }
 }
 
-// the choice is kept on every provider of the app's login, so a provider added later inherits it
+// the server keeps every provider of the app's login saying the same; the drawer gives a provider added later the choice
 function setOpenSignUp(open: boolean) {
-  void act('access', () => Promise.all(providers.value.map(provider =>
-      saveSignInProvider({ ...provider, configuration: { ...provider.configuration, createUserOnSignIn: open } } as SignInProvider))),
-           'Could not change who can sign in.')
+  void act('access', () => APP_BUILDER.setOpenSignUp(props.applicationId!, open), 'Could not change who can sign in.')
 }
 
 function setEnabled(provider: SignInProvider, enabled: boolean) {
@@ -183,8 +191,8 @@ function setEnabled(provider: SignInProvider, enabled: boolean) {
 }
 
 function remove(provider: SignInProvider) {
-  const name = provider.kind === 'password' ? PASSWORD_PROVIDER_NAME : provider.configuration.name
-  const question = provider.kind === 'password'
+  const name = provider.type === 'PASSWORD' ? PASSWORD_PROVIDER_NAME : provider.configuration.name
+  const question = provider.type === 'PASSWORD'
     ? `Delete ${name}? Sign-ins with a password stop at once.`
     : `Delete ${name}? Sign-ins through it stop at once, and its client secret is deleted.`
   if (window.confirm(question)) {

@@ -44,6 +44,16 @@ public interface AppBuilderService {
     Flux<AppCreationEvent> createApp(String name, String description, boolean openSignUp);
 
     /**
+     * Sets whether anyone may sign up at the app, on its email and password and on each identity provider its login
+     * offers, so every one of them says the same. Fails while the app offers no way to sign in, and for an id that
+     * names no app of the organization.
+     *
+     * @param applicationId the app's application id
+     * @param openSignUp    true for anyone who signs up, false for the people invited on the app's Users page
+     */
+    Future<Void> setOpenSignUp(String applicationId, boolean openSignUp);
+
+    /**
      * Sends the user's message about the app and streams Claude's turn: its reply as
      * {@link org.kinotic.summit42.api.model.BuildEventType#TEXT} chunks, interleaved with what it is doing to the
      * app. The turn runs to its end whether or not the stream is still subscribed, and records its reply in the

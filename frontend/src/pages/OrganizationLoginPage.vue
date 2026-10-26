@@ -4,7 +4,10 @@
       <HeroPitch />
     </template>
 
-    <div v-if="error" class="alert alert--error" role="alert">{{ error }}</div>
+    <div v-if="error" class="alert alert--error" role="alert">
+      {{ error }}
+      <button v-if="providersUnavailable" type="button" class="link-button" @click="loadProviders">Try again</button>
+    </div>
 
     <p v-if="unknown" class="muted">There is no organization named <strong>{{ organizationId }}</strong>.</p>
 
@@ -75,6 +78,7 @@ const router = useRouter()
 
 const providers = ref<LoginProvider[]>([])
 const unknown = ref(false)
+const providersUnavailable = ref(false)
 const email = ref('')
 const password = ref('')
 const signingIn = ref(false)
@@ -89,6 +93,13 @@ onMounted(async () => {
     await router.replace(referer.value ?? '/')
     return
   }
+  await loadProviders()
+})
+
+// the page offers only what the list says the organization offers, so a list that cannot be read is tried again
+async function loadProviders() {
+  error.value = null
+  providersUnavailable.value = false
   try {
     const offered = await fetchOrganizationProviders(props.organizationId)
     unknown.value = offered === null
@@ -99,8 +110,9 @@ onMounted(async () => {
     }
   } catch {
     error.value = PROVIDERS_UNAVAILABLE
+    providersUnavailable.value = true
   }
-})
+}
 
 // the remembered organization would send /login straight back here
 function useAnother() {

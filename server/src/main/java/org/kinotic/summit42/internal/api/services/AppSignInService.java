@@ -3,6 +3,7 @@ package org.kinotic.summit42.internal.api.services;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.Validate;
 import org.kinotic.core.api.crud.Pageable;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.domain.api.model.security.ApplicationOidcConfiguration;
@@ -57,28 +58,38 @@ public class AppSignInService {
 
     /**
      * Sets whether anyone may sign up at the app, on its email and password and on each identity provider its login
-     * offers, so every one of them says the same.
+     * offers, so every one of them says the same. Fails with an {@link IllegalStateException} while the app has
+     * neither, since the choice is kept on them.
      *
      * @return how people sign in to the app from now on
      */
     public Future<AppSignIn> setOpenSignUp(OrganizationParticipant participant, String applicationId, boolean openSignUp) {
         Future<PasswordConfiguration> password = findPassword(participant, applicationId);
         Future<List<OwnedOidcConfiguration>> providers = findProviders(participant, applicationId);
-        return Future.all(password, providers)
-                     .compose(v -> {
-                         List<Future<?>> saved = new ArrayList<>();
-                         if (password.result() != null) {
-                             PasswordConfiguration changed = password.result().setCreateUserOnSignIn(openSignUp);
-                             saved.add(callAs(participant, () -> passwordConfigurationService.save(changed)));
-                         }
-                         for (OwnedOidcConfiguration provider : providers.result()) {
-                             provider.setCreateUserOnSignIn(openSignUp);
-                             // saved without a secret, so the one held stays as it is
-                             saved.add(callAs(participant, () -> oidcConfigurationService.save(provider, null)));
-                         }
-                         return Future.all(saved);
-                     })
-                     .compose(v -> find(participant, applicationId));
+        return Future.all(password, providers).compose(v -> {
+            Validate.validState(password.result() != null || !providers.result().isEmpty(),
+                                "The app offers no way to sign in yet. Add an email and a password, or a sign-in provider,"
+                                + " on the app's Settings page in Summit 42 first.");
+            // one save at a time, so a refused save leaves the ones before it changed and the ones after it as they were
+            Future<PasswordConfiguration> savedPassword;
+            if (password.result() != null) {
+                PasswordConfiguration changed = password.result().setCreateUserOnSignIn(openSignUp);
+                savedPassword = callAs(participant, () -> passwordConfigurationService.save(changed));
+            } else {
+                savedPassword = Future.succeededFuture();
+            }
+            Future<List<OwnedOidcConfiguration>> savedProviders = savedPassword.compose(p -> Future.succeededFuture(new ArrayList<>()));
+            for (OwnedOidcConfiguration provider : providers.result()) {
+                provider.setCreateUserOnSignIn(openSignUp);
+                // saved without a secret, so the one held stays as it is
+                savedProviders = savedProviders.compose(saved -> callAs(participant, () -> oidcConfigurationService.save(provider, null))
+                        .map(result -> {
+                            saved.add(result);
+                            return saved;
+                        }));
+            }
+            return savedProviders.map(saved -> toSignIn(savedPassword.result(), saved));
+        });
     }
 
     // the app's own login's email and password, or null while it has none

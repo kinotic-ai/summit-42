@@ -549,6 +549,29 @@ public class AppBuilderFlowTests extends AppBuilderServiceTestBase {
     }
 
     @Test
+    public void testSetOpenSignUpKeepsEveryProviderOfTheAppSayingTheSame() throws Exception {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+        passwordConfigurationService.add(organizationId(), "todo", false);
+        oidcConfigurationService.add(organizationId(), "todo", "Google", OidcProviderType.GOOGLE);
+
+        await(callAs(participant, service -> service.setOpenSignUp("todo", true)));
+
+        Assertions.assertTrue(passwordOf("todo").isCreateUserOnSignIn());
+        Assertions.assertTrue(oidcConfigurationService.configurationsOf(organizationId()).values().stream()
+                                                      .allMatch(OwnedOidcConfiguration::isCreateUserOnSignIn));
+    }
+
+    @Test
+    public void testSetOpenSignUpIsRefusedWhileTheAppOffersNoWayToSignIn() {
+        projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
+
+        ExecutionException e = Assertions.assertThrows(ExecutionException.class,
+                                                       () -> await(callAs(participant, service -> service.setOpenSignUp("todo", true))));
+
+        Assertions.assertTrue(e.getCause().getMessage().startsWith("The app offers no way to sign in yet."), e.getCause().getMessage());
+    }
+
+    @Test
     public void testChatTellsClaudeWhenNobodyCanSignInYet() {
         projectService.add(organizationId(), "todo", RepositoryConnectionStatus.CONNECTED);
         anthropic.replyWithText("Done");

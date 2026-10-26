@@ -17,6 +17,7 @@
             invitation.
           </p>
           <a v-if="invite.signInUrl" :href="invite.signInUrl" class="btn btn--secondary btn--block">Continue to the app</a>
+          <p v-else class="muted">The app has no sign-in page yet, so ask whoever invited you where to open it.</p>
           <div v-if="invite.localEnabled" class="divider">or set a password</div>
         </template>
         <p v-else-if="!invite.localEnabled" class="muted">
@@ -84,6 +85,7 @@ import {
   inviteProviderUrl,
   providerDisplayName,
 } from '@/api/auth'
+import { connect } from '@/api/session'
 
 /**
  * The emailed invitation's page: an invitation into the organization is accepted through any provider its login
@@ -164,6 +166,11 @@ async function accept() {
       window.location.assign(app.primaryUiUrl)
     } else if (app) {
       accepted.value = true
+    } else if (await connect()) {
+      // accepting into the organization signed the browser in
+      await router.replace('/')
+    } else {
+      error.value = 'You joined, but this browser did not keep the session. Allow cookies for the Summit 42 server and sign in.'
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Could not accept the invitation'

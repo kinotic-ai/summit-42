@@ -171,8 +171,8 @@ const ORGANIZATION_KINDS = [OidcProviderType.OKTA, OidcProviderType.AZURE_AD, Oi
 const APPLICATION_KINDS = [OidcProviderType.GOOGLE, OidcProviderType.AZURE_AD, OidcProviderType.OKTA]
 
 const editing = props.provider
-const editingOidc = editing?.kind === 'oidc' ? editing.configuration : null
-const editingPassword = editing?.kind === 'password' ? editing.configuration : null
+const editingOidc = editing?.type === 'OIDC' ? editing.configuration : null
+const editingPassword = editing?.type === 'PASSWORD' ? editing.configuration : null
 const kinds = props.applicationId === null ? ORGANIZATION_KINDS : APPLICATION_KINDS
 
 const choice = ref<ProviderChoice>(editingPassword ? PASSWORD : editingOidc?.provider ?? kinds[0]!)

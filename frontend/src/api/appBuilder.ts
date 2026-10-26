@@ -104,6 +104,14 @@ export class AppBuilderService {
     }
 
     /**
+     * Sets whether anyone may sign up at the app, on its email and password and every provider of its login; rejects
+     * while the app offers no way to sign in.
+     */
+    public setOpenSignUp(applicationId: string, openSignUp: boolean): Promise<void> {
+        return this.serviceProxy.invoke('setOpenSignUp', [applicationId, openSignUp])
+    }
+
+    /**
      * Sends a message about the app; the events of the builder's turn follow, and the stream completes when the turn
      * is over. A message sent while a turn runs steers it: the running turn streams it as a USER_MESSAGE event where
      * Claude reads it, and this stream completes without events; one sent after the turn's last step streams a turn

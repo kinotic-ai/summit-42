@@ -158,6 +158,14 @@ public class DefaultAppBuilderService implements AppBuilderService {
         });
     }
 
+    @Override
+    public Future<Void> setOpenSignUp(String applicationId, boolean openSignUp) {
+        OrganizationParticipant participant = securityContext.requireParticipant(OrganizationParticipant.class);
+        return findProject(participant, applicationId)
+                .compose(project -> appSignInService.setOpenSignUp(participant, applicationId, openSignUp))
+                .mapEmpty();
+    }
+
     // Claude's one-line summary of what the user wants the app to do; an app whose summary fails is created without
     // a description, since the chat still has the user's own words
     private Future<String> summarize(String description) {
