@@ -28,7 +28,8 @@ public class ConversationRepository {
 
     private static final String INDEX = "summit42_conversation";
     private static final String MIGRATIONS = "classpath:summit42/migrations/*.sql";
-    // the project MigrationExecutor records Summit 42's own migrations under, apart from Kinotic's and its apps'
+    // the project MigrationExecutor records Summit 42's own migrations under, in the system organization, apart from
+    // Kinotic's and its apps'
     private static final String MIGRATION_PROJECT = "summit_42";
 
     private final ElasticsearchAsyncClient client;
@@ -43,7 +44,9 @@ public class ConversationRepository {
                                            .<Migration>map(resource -> new ResourceMigration(resource, migrationParser))
                                            .toList();
         migrationExecutor.ensureMigrationIndexExists()
-                         .thenCompose(created -> migrationExecutor.executeProjectMigrations(migrations, MIGRATION_PROJECT))
+                         .thenCompose(created -> migrationExecutor.executeProjectMigrations(migrations,
+                                                                                         MigrationExecutor.SYSTEM_ORGANIZATION,
+                                                                                         MIGRATION_PROJECT))
                          .get();
     }
 

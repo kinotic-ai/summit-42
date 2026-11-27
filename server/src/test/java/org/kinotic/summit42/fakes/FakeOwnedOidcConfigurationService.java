@@ -6,7 +6,7 @@ import org.kinotic.core.api.crud.Pageable;
 import org.kinotic.core.api.security.SecurityContext;
 import org.kinotic.domain.api.model.security.ApplicationOidcConfiguration;
 import org.kinotic.domain.api.model.security.ClientRegistrationType;
-import org.kinotic.domain.api.model.security.OidcProviderType;
+import org.kinotic.common.api.oidc.OidcProviderType;
 import org.kinotic.domain.api.model.security.OwnedOidcConfiguration;
 import org.kinotic.management.api.services.security.OwnedOidcConfigurationService;
 
